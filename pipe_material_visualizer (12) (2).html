@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Residential Water Main Pipe Materials</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5f0e8;
+    --surface: #ede8de;
+    --surface2: #e4ddd0;
+    --border: #c8bfaa;
+    --text: #1a1612;
+    --text-muted: #7a6e60;
+    --unknown: #c0b8aa;
+    --total-bg: #1a1612;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    padding: 16px 20px 20px;
+  }
+
+  header { max-width: 1100px; margin: 0 auto 12px; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+
+  h1 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.2rem;
+    font-weight: 400;
+    line-height: 1.15;
+    margin-bottom: 0;
+    white-space: nowrap;
+  }
+  h1 em { font-style: italic; color: var(--text-muted); }
+
+  .subtitle {
+    font-size: 0.58rem;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    line-height: 1.4;
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; display: grid; gap: 10px; }
+
+  /* Side-by-side layout */
+  .main-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .left-col { display: flex; flex-direction: column; gap: 8px; padding: 0; }
+  .right-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border-top: 1px solid var(--border);
+    padding: 12px 14px;
+    background: var(--surface);
+  }
+
+  /* Split tab layout */
+  .split-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0;
+  }
+  .split-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border-right: 1px solid var(--border);
+    padding: 10px 12px;
+  }
+  .split-col:last-child { border-right: none; }
+  .split-col-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .split-col-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .split-col-meta {
+    font-size: 0.55rem;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+
+  /* Treemap */
+  .treemap-wrap {
+    background: var(--surface);
+    padding: 10px 14px;
+  }
+  .split-col .treemap-wrap { padding: 6px 4px; }
+  .split-col #treemap-canvas { height: 240px !important; }
+  .bar-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  #treemap-canvas {
+    width: 100%;
+    height: 380px;
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .tm-cell {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    overflow: hidden;
+    box-sizing: border-box;
+    transition: left 0.35s cubic-bezier(.4,0,.2,1),
+                top 0.35s cubic-bezier(.4,0,.2,1),
+                width 0.35s cubic-bezier(.4,0,.2,1),
+                height 0.35s cubic-bezier(.4,0,.2,1);
+  }
+  .tm-hdr {
+    border-bottom: 1px solid rgba(255,255,255,0.25);
+    flex-direction: row;
+    justify-content: center;
+    gap: 4px;
+  }
+  /* Shared value hierarchy inside every treemap cell */
+  .tm-val-name, .tm-val-flo, .tm-val-pct, .tm-val-homes {
+    pointer-events: none;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    text-align: center;
+    width: 100%;
+    padding: 0 4px;
+    line-height: 1.25;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  .tm-val-name {
+    font-size: 0.78rem;
+    font-weight: 700;
+    font-style: italic;
+  }
+  .tm-mat-name {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-thickness: 1px;
+  }
+  .tm-val-flo   { font-size: 0.68rem; font-weight: 600; opacity: 0.95; }
+  .tm-val-pct   { font-size: 0.58rem; font-weight: 400; opacity: 0.80; }
+  .tm-val-homes { font-size: 0.50rem; font-weight: 300; opacity: 0.60; }
+  .tm-name {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: rgba(255,255,255,0.92);
+    text-align: center;
+    line-height: 1.3;
+    pointer-events: none;
+    padding: 0 6px;
+  }
+  .tm-pct {
+    font-size: 0.55rem;
+    color: rgba(255,255,255,0.6);
+    pointer-events: none;
+    margin-top: 2px;
+  }
+
+  /* Totals */
+  .totals-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .total-card { border-radius: 4px; padding: 8px 12px; }
+  .total-card.dark { background: var(--total-bg); color: #f5f0e8; }
+  .total-card.light { background: var(--surface2); border: 1px solid var(--border); }
+  .tc-label { font-size: 0.52rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.5; margin-bottom: 2px; }
+  .tc-value { font-size: 1.1rem; font-weight: 500; line-height: 1; }
+  .tc-homes { font-size: 0.52rem; opacity: 0.45; margin-top: 2px; }
+
+  /* Controls */
+  .controls-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; }
+  .controls-note { font-size: 0.52rem; color: var(--text-muted); font-style: italic; }
+  .reset-btn {
+    background: none; border: 1px solid var(--border); border-radius: 3px;
+    padding: 5px 12px; font-family: 'DM Mono', monospace; font-size: 0.6rem;
+    letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer;
+    color: var(--text-muted); transition: all 0.15s;
+  }
+  .reset-btn:hover { color: var(--text); border-color: var(--text-muted); }
+  .save-btn { border-color: var(--border); margin-left: 4px; }
+  .save-btn:hover { color: var(--text); border-color: var(--text-muted); }
+  .export-btn { border-color: var(--border); margin-left: 4px; }
+  .export-btn:hover { color: var(--text); border-color: var(--text-muted); }
+
+  /* Material panels */
+  .materials { display: grid; gap: 10px; }
+
+  .mat-panel {
+    border: 1px solid var(--border);
+    border-left: 4px solid;
+    border-radius: 4px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  /* Header row: name | slider | pct | homes */
+  .mat-top {
+    display: grid;
+    grid-template-columns: 110px 1fr 48px 72px;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+  }
+
+  .mat-name {
+    font-size: 0.62rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .slider-wrap { display: flex; align-items: center; gap: 6px; }
+  .slider-wrap input[type=range] {
+    -webkit-appearance: none;
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+  .sl-end { font-size: 0.54rem; color: var(--text-muted); min-width: 20px; }
+  .sl-end.r { text-align: right; }
+
+  .mat-pct-val { font-size: 0.9rem; font-weight: 500; text-align: right; }
+  .mat-homes-val { font-size: 0.52rem; color: var(--text-muted); text-align: right; }
+
+  /* Fittings */
+  .fittings-section { border-top: 1px solid var(--border); }
+
+  .fit-header {
+    display: grid;
+    grid-template-columns: 1fr 70px 72px;
+    gap: 6px;
+    padding: 4px 10px 4px 20px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.50rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .fit-header span:not(:first-child) { text-align: right; }
+
+  .fit-row {
+    padding: 4px 10px 3px 20px;
+    border-bottom: 1px solid rgba(0,0,0,0.04);
+  }
+  .fit-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0 2px;
+  }
+  .fit-slider-row input[type=range] {
+    -webkit-appearance: none;
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+  .fit-row:last-child { border-bottom: none; }
+
+  .fit-main {
+    display: grid;
+    grid-template-columns: 1fr 70px 88px;
+    gap: 8px;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+
+  .fit-name { font-size: 0.6rem; color: var(--text-muted); }
+  .fit-name::before { content: '↳ '; opacity: 0.4; }
+
+  .fit-pct { font-size: 0.7rem; font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+  .fit-homes { font-size: 0.56rem; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+  .fit-bar-bg { height: 3px; background: rgba(0,0,0,0.08); border-radius: 2px; overflow: hidden; }
+  .fit-bar-fill { height: 100%; border-radius: 2px; transition: width 0.3s ease; }
+
+  footer {
+    max-width: 900px;
+    margin: 24px auto 0;
+    font-size: 0.57rem;
+    color: var(--text-muted);
+    line-height: 1.8;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: -1px;
+    position: relative;
+    z-index: 1;
+  }
+  .tab-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    background: var(--surface2);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .tab-btn:hover { background: var(--surface); color: var(--text); }
+  .tab-btn.active {
+    background: var(--surface);
+    color: var(--text);
+    font-weight: 600;
+    border-color: var(--border);
+    position: relative;
+  }
+  .tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0; right: 0;
+    height: 2px;
+    background: var(--surface);
+  }
+  .tab-panel {
+    border: 1px solid var(--border);
+    border-radius: 0 4px 4px 4px;
+    overflow: hidden;
+  }
+  .tab-subtitle {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 8px 18px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* By Model landscape layout */
+  .split-landscape {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    width: 100%;
+  }
+  /* By Model key (legacy horizontal — kept for potential reuse) */
+  .split-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 24px;
+    padding: 10px 14px;
+    background: var(--surface2);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .key-mat-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .key-mat-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .key-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .key-label {
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: 0.03em;
+  }
+  .key-fit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 6px;
+    border-left: 2px solid var(--border);
+    margin-left: 5px;
+  }
+  .key-fit-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .key-fit-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 1px;
+    flex-shrink: 0;
+  }
+  .key-fit-label {
+    font-size: 0.56rem;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>U.S. Residential Water Main<br><em>Pipe Material Estimates</em></h1>
+  <p class="subtitle">Main cold water supply line · Flo device install base · Directional estimates only</p>
+</header>
+
+<div class="container" id="app"></div>
+<footer id="footer"></footer>
+
+<script>
+const TOTAL = 78_000_000;
+
+const TABS = [
+  { id: 'overall',   label: 'Overall',              flo: 561_148, showHomes: true  },
+  { id: 'fl_combo',  label: '900-001 + 900-002',    flo: 287_039, showHomes: false },
+  { id: 'fl_125',    label: '900-002',              flo:  73_188, showHomes: false },
+  { id: 'fl_1',      label: '900-006',              flo: 274_109, showHomes: false },
+  { id: 'fl_075',    label: '900-001',              flo: 213_851, showHomes: false },
+  { id: 'fl_split',  label: 'By Model',             flo: 561_148, showHomes: false, isSplit: true },
+  { id: 'fl_split2', label: 'By Model (¾" + 1¼")',  flo: 287_039, showHomes: false, isSplit: true, splitModels: [
+      { label: '900-001', flo: 213_851 },
+      { label: '900-002', flo:  73_188 },
+  ]},
+];
+
+const OVERALL_FLO = 561_148;
+const SPLIT_MODELS = [
+  { label: '900-001', flo: 213_851 },
+  { label: '900-006', flo: 274_109 },
+  { label: '900-002', flo:  73_188 },
+];
+
+let currentTab = 0;
+
+const DEFAULTS = [
+  {
+    id: 'copper', name: 'Copper', color: '#b5541a', pct: 52,
+    fittings: [
+      { name: 'Solder / sweat male adapter',      share: 0.70 },
+      { name: 'Compression male adapter',          share: 0.29 },
+      { name: 'Push-fit male adapter (SharkBite)', share: 0.01 },
+    ]
+  },
+  {
+    id: 'galv', name: 'Galvanized Steel', color: '#5a6e4a', pct: 20,
+    fittings: [
+      { name: 'Threaded NPT (rethread direct)',        share: 0.50 },
+      { name: 'Dielectric union to threaded nipple',   share: 0.50 },
+    ]
+  },
+  {
+    id: 'pex', name: 'PEX', color: '#2a5a8a', pct: 14,
+    fittings: [
+      { name: 'Crimp/clamp insert male adapter (PEX-B)', share: 0.29 },
+      { name: 'Expansion insert male adapter (PEX-A)',   share: 0.70 },
+      { name: 'Push-fit male adapter (SharkBite)',       share: 0.01 },
+    ]
+  },
+  {
+    id: 'cpvc', name: 'CPVC', color: '#8a4a7a', pct: 4,
+    fittings: [
+      { name: 'Solvent cement male adapter',        share: 0.99 },
+      { name: 'Push-fit male adapter (SharkBite)',  share: 0.01 },
+    ]
+  },
+  {
+    id: 'other', name: 'Other', color: '#8a7a5a', pct: 3,
+    fittings: [
+      { name: 'Compression male adapter',                  share: 0.50 },
+      { name: 'Fernco rubber coupling to threaded nipple', share: 0.50 },
+    ]
+  },
+];
+
+const STORAGE_KEY = 'pipe_viz_defaults_v1';
+
+function loadPersistedDefaults() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length !== DEFAULTS.length) return null;
+    return parsed;
+  } catch(e) { return null; }
+}
+
+function applyPersistedDefaults(persisted) {
+  return DEFAULTS.map((d, i) => {
+    const p = persisted[i];
+    if (!p || p.id !== d.id) return { ...d, fittings: d.fittings.map(f => ({...f})) };
+    return {
+      ...d,
+      pct: p.pct,
+      fittings: d.fittings.map((f, fi) => ({
+        ...f,
+        share: p.fittings[fi]?.share ?? f.share
+      }))
+    };
+  });
+}
+
+const _persisted = loadPersistedDefaults();
+let savedDefaults = _persisted
+  ? applyPersistedDefaults(_persisted)
+  : DEFAULTS.map(d => ({ ...d, fittings: d.fittings.map(f => ({...f})) }));
+
+let state = savedDefaults.map(d => ({ ...d, fittings: d.fittings.map(f => ({...f})) }));
+
+const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(0)+'K' : n.toFixed(0);
+const fmtFlo = n => n >= 1e3 ? (n/1e3).toFixed(1)+'K' : Math.round(n).toLocaleString();
+const toHomes = pct => Math.round(pct / 100 * TOTAL);
+const toFlo = pct => Math.round(pct / 100 * TABS[currentTab].flo);
+const totalPct = () => state.reduce((s, m) => s + m.pct, 0);
+
+// ── Treemap layout (binary split by value) ───────────────────
+// Recursively bisects the rectangle, splitting along the longer axis.
+// Returns array of {x, y, w, h, ...item} in 0–1 normalised coords.
+function treemapLayout(items) {
+  const sorted = [...items].sort((a, b) => b.value - a.value);
+  const results = [];
+
+  function place(nodes, x, y, w, h) {
+    if (!nodes.length) return;
+    if (nodes.length === 1) {
+      results.push({ ...nodes[0], x, y, w, h });
+      return;
+    }
+
+    const total = nodes.reduce((s, n) => s + n.value, 0);
+
+    // Find best binary split (minimise difference between two halves)
+    let bestDiff = Infinity, splitAt = 1;
+    let running = 0;
+    for (let i = 0; i < nodes.length - 1; i++) {
+      running += nodes[i].value;
+      const diff = Math.abs(running - (total - running));
+      if (diff < bestDiff) { bestDiff = diff; splitAt = i + 1; }
+    }
+
+    const groupA = nodes.slice(0, splitAt);
+    const groupB = nodes.slice(splitAt);
+    const aFrac  = groupA.reduce((s, n) => s + n.value, 0) / total;
+
+    if (w >= h) {
+      // split vertically (two columns)
+      place(groupA, x,           y, w * aFrac,       h);
+      place(groupB, x + w*aFrac, y, w * (1 - aFrac), h);
+    } else {
+      // split horizontally (two rows)
+      place(groupA, x, y,           w, h * aFrac);
+      place(groupB, x, y + h*aFrac, w, h * (1 - aFrac));
+    }
+  }
+
+  place(sorted, 0, 0, 1, 1);
+  return results;
+}
+
+// Parse hex to RGB
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return [r,g,b];
+}
+
+// Shade a base color for each fitting: spread from 70% to 120% brightness
+function shiftColor(hex, idx, total) {
+  const [r,g,b] = hexToRgb(hex);
+  const t = total <= 1 ? 0.5 : idx / (total - 1);
+  // Mute by blending toward a neutral grey (160,160,160) then apply subtle brightness spread
+  const grey = 160;
+  const mute = 0.55; // 0 = fully grey, 1 = original color
+  const mr = r * mute + grey * (1 - mute);
+  const mg = g * mute + grey * (1 - mute);
+  const mb = b * mute + grey * (1 - mute);
+  // Subtle brightness spread across fittings: 0.88 to 1.08
+  const factor = 0.88 + t * 0.20;
+  const clamp = v => Math.min(255, Math.max(0, Math.round(v * factor)));
+  return '#' + [clamp(mr), clamp(mg), clamp(mb)].map(x => x.toString(16).padStart(2,'0')).join('');
+}
+
+// Choose readable text color (dark or light) for a background hex
+function textColor(hex) {
+  const [r,g,b] = hexToRgb(hex);
+  return (0.299*r + 0.587*g + 0.114*b) / 255 > 0.55
+    ? 'rgba(0,0,0,0.72)' : 'rgba(255,255,255,0.92)';
+}
+
+function renderTreemap(tot, unknownPct, floOverride) {
+  const GAP    = 0.003;  // gap between cells (normalised 0-1)
+  const HDR    = 0.28;   // header strip height as fraction of material cell height
+
+  // Top-level material items for outer layout
+  const topItems = [
+    ...state.map(m => ({ ...m, value: m.pct })),
+    { id: 'unknown', name: 'Unknown', color: '#c0b8aa', value: unknownPct, pct: unknownPct, fittings: [] }
+  ].filter(d => d.value > 0);
+
+  const matCells = treemapLayout(topItems);
+  const px = v => (v * 100).toFixed(3) + '%';
+  let html = '';
+
+  matCells.forEach(mc => {
+    const hasFittings = mc.fittings && mc.fittings.length > 0;
+    const cellPxW = mc.w * 860;
+    const cellPxH = mc.h * 380;
+
+    if (!hasFittings) {
+      // Unknown — flat cell
+      html += `<div class="tm-cell" style="
+        left:${px(mc.x+GAP)};top:${px(mc.y+GAP)};
+        width:${px(mc.w-GAP*2)};height:${px(mc.h-GAP*2)};
+        background:${mc.color}" title="Unknown: ${mc.pct.toFixed(1)}%">
+        ${cellPxW > 55 && cellPxH > 28 ? `<span class="tm-name" style="color:rgba(0,0,0,0.4)">Unknown</span><span class="tm-pct" style="color:rgba(0,0,0,0.3)">${mc.pct.toFixed(1)}%</span>` : ''}
+      </div>`;
+      return;
+    }
+
+    // Header strip (material label)
+    const showHdr = cellPxH > 38 && cellPxW > 40;
+    const hdrH = showHdr ? HDR * mc.h : 0.04 * mc.h;
+
+    const mHomes = fmt(toHomes(mc.pct));
+    const _mFloBase = floOverride !== undefined ? floOverride : TABS[currentTab].flo;
+    const mFlo   = fmtFlo(Math.round(mc.pct / 100 * _mFloBase));
+    const tc0    = textColor(mc.color);
+    html += `<div class="tm-cell tm-hdr" style="
+      left:${px(mc.x+GAP)};top:${px(mc.y+GAP)};
+      width:${px(mc.w-GAP*2)};height:${px(hdrH)};
+      background:${mc.color};flex-direction:column;gap:0" title="${mc.name}: ${mFlo} Flo units · ${mc.pct.toFixed(1)}% · ${mHomes} homes (78M base)">
+      ${showHdr ? (() => {
+        const hdrPxW = mc.w * 860;
+        const hdrPxH = hdrH * 380;
+        const mLines = (hdrPxH > 56 ? 4 : hdrPxH > 42 ? 3 : hdrPxH > 28 ? 2 : 1);
+        const mFsPx  = Math.min(12, Math.max(7, Math.min(hdrPxW / 8, hdrPxH / (mLines * 1.25 * 1.6))));
+        const mFs    = mFsPx.toFixed(1) + 'px';
+        const mFsLg  = (mFsPx * 1.2).toFixed(1) + 'px';
+        return `
+          <span class="tm-mat-name"  style="color:${tc0};font-size:${mFsLg}">${mc.name}</span>
+          ${hdrPxH > 28 ? `<span class="tm-val-flo"   style="color:${tc0};font-size:${mFs}">${mFlo} units</span>` : ''}
+          ${hdrPxH > 42 ? `<span class="tm-val-pct"   style="color:${tc0};font-size:${mFs};opacity:0.8">${mc.pct.toFixed(1)}%</span>` : ''}
+          
+        `;
+      })() : ''}
+    </div>`;
+
+    // Fitting area
+    const faX = mc.x + GAP;
+    const faY = mc.y + hdrH + GAP;
+    const faW = mc.w - GAP * 2;
+    const faH = mc.h - hdrH - GAP * 3;
+    if (faW <= 0 || faH <= 0) return;
+
+    const fitItems = mc.fittings.map((f, fi) => ({
+      ...f, value: f.share, fi, total: mc.fittings.length
+    }));
+
+    const fitCells = treemapLayout(fitItems);
+
+    fitCells.forEach(fc => {
+      const bg = shiftColor(mc.color, fc.fi, fc.total);
+      const tc = textColor(bg);
+      const ax = faX + fc.x * faW;
+      const ay = faY + fc.y * faH;
+      const aw = fc.w * faW;
+      const ah = fc.h * faH;
+      const fpxW = aw * 860;
+      const fpxH = ah * 380;
+      const fpRaw = mc.pct * fc.value;          // exact % of total, unrounded
+      const fp = fpRaw.toFixed(1);              // display string only
+      const _floBase = floOverride !== undefined ? floOverride : TABS[currentTab].flo;
+      const fpFloCount = Math.round(fpRaw / 100 * _floBase);
+
+      // Shorten name for display
+      let short = fc.name
+        .replace(' male adapter', '')
+        .replace(' (SharkBite)', ' (SB)')
+        .replace('Dielectric union to threaded nipple', 'Dielectric union')
+        .replace('Fernco rubber coupling to threaded nipple', 'Fernco coupling')
+        .replace('Crimp/clamp insert ', 'Crimp ')
+        .replace('Expansion insert ', 'Expan. ')
+        .replace('Threaded NPT (rethread direct)', 'Threaded NPT')
+        .replace('Solvent cement', 'Solvent')
+        .trim();
+
+      const fHomes = fmt(toHomes(parseFloat(fp)));
+      const fFlo   = fmtFlo(fpFloCount);
+      // Base font size fitted to cell: cap at 11px, scale down for narrow/short cells
+      // Scale font to physically fit inside cell in both dimensions
+      const nLines  = (fpxH > 52 ? 4 : fpxH > 38 ? 3 : fpxH > 22 ? 2 : 1);
+      const fsPx    = Math.min(11, Math.max(6, Math.min(fpxW / 6.5, fpxH / (nLines * 1.4 * 1.5))));
+      const fs      = fsPx.toFixed(1) + 'px';
+      const fsLg    = (fsPx * 1.15).toFixed(1) + 'px';
+      html += `<div class="tm-cell tm-fit" style="
+        left:${px(ax+GAP/2)};top:${px(ay+GAP/2)};
+        width:${px(aw-GAP)};height:${px(ah-GAP)};
+        background:${bg};flex-direction:column;gap:1px;padding:2px 2px" title="${fc.name}: ${fFlo} Flo units · ${fp}%">
+        ${fpxW > 20 && fpxH > 10 ? `<span class="tm-val-name"  style="color:${tc};font-size:${fsLg}">${short}</span>` : ''}
+        ${fpxW > 20 && fpxH > 20 ? `<span class="tm-val-flo"   style="color:${tc};font-size:${fs}">${fFlo} units</span>` : ''}
+        ${fpxW > 20 && fpxH > 32 ? `<span class="tm-val-pct"   style="color:${tc};font-size:${fs};opacity:0.8">${fp}%</span>` : ''}
+        
+      </div>`;
+    });
+  });
+
+  return `
+    <div class="treemap-wrap">
+      <div class="bar-label">Proportional share of ${fmtFlo(TABS[currentTab].flo)} Flo units · area = % of total · fittings nested within materials</div>
+      <div id="treemap-canvas">${html}</div>
+    </div>`;
+}
+
+function exportTreemap() {
+  // For split tab, capture the treemap-wrap + totals + key inside the tab-panel.
+  // For normal tabs, capture the .left-col as before.
+  const isSplit = TABS[currentTab].isSplit;
+
+  let target;
+  if (isSplit) {
+    // Wrap treemap-wrap, totals-row, and split-key into a temporary capture div
+    const panel = document.querySelector('.tab-panel');
+    const landscape = panel.querySelector('.split-landscape');
+    if (!landscape) { alert('Nothing to export.'); return; }
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'background:#f5f0e8;padding:12px;display:block;font-family:DM Mono,monospace;width:1060px';
+    wrapper.appendChild(landscape.cloneNode(true));
+    document.body.appendChild(wrapper);
+    target = wrapper;
+  } else {
+    target = document.querySelector('.left-col');
+    if (!target) { alert('Nothing to export.'); return; }
+  }
+
+  const tabLabel = TABS[currentTab].label;
+  const btn = document.querySelector('.export-btn');
+  const orig = btn.textContent;
+  btn.textContent = '⏳ Exporting…';
+  btn.disabled = true;
+
+  const prevBg = isSplit ? null : target.style.background;
+  if (!isSplit) target.style.background = '#f5f0e8';
+
+  html2canvas(target, {
+    backgroundColor: '#f5f0e8',
+    scale: 2,
+    useCORS: true,
+    logging: false,
+  }).then(canvas => {
+    if (isSplit) { document.body.removeChild(target); }
+    else { target.style.background = prevBg; }
+    const link = document.createElement('a');
+    link.download = `pipe-materials-${tabLabel.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    btn.textContent = '✓ Exported';
+    btn.disabled = false;
+    setTimeout(() => { btn.textContent = orig; }, 1800);
+  }).catch(err => {
+    if (isSplit && document.body.contains(target)) { document.body.removeChild(target); }
+    else if (!isSplit) { target.style.background = prevBg; }
+    console.error(err);
+    btn.textContent = 'Error';
+    btn.disabled = false;
+    setTimeout(() => { btn.textContent = orig; }, 1800);
+  });
+}
+
+function renderSplitTab() {
+  const tabDef   = TABS[currentTab];
+  const models   = tabDef.splitModels || SPLIT_MODELS;
+  const OVERALL  = tabDef.flo;
+  const GAP  = 0.003;
+  const GGAP = 0.006;  // larger gap between model regions
+  const MODEL_HDR = 0.07;  // model label strip as fraction of model region height
+  const MAT_HDR   = 0.22;  // material label strip as fraction of material region height
+
+  const px = v => (v * 100).toFixed(3) + '%';
+  const modelColors = { '900-001': '#b5541a', '900-006': '#2a5a8a', '900-002': '#5a6e4a' };
+  let html = '';
+
+  // ── Level 1: split canvas by model proportions ──────────────────────────
+  const modelItems = models.map(m => ({ ...m, value: m.flo / OVERALL }));
+  const modelRegions = treemapLayout(modelItems);
+
+  modelRegions.forEach((mr, mi) => {
+    const model   = mr;
+    const mColor  = modelColors[model.label] || '#888';
+    const mPct    = (model.flo / OVERALL * 100).toFixed(1);
+    const mPxW    = mr.w * 860;
+    const mPxH    = mr.h * 520;
+
+    // Model border overlay
+    html += `<div style="
+      position:absolute;left:${px(mr.x)};top:${px(mr.y)};
+      width:${px(mr.w)};height:${px(mr.h)};
+      border:2px solid ${mColor};border-radius:3px;
+      box-sizing:border-box;pointer-events:none;z-index:4"></div>`;
+
+    // Model header strip
+    const showMHdr = mPxH > 24 && mPxW > 40;
+    const mHdrH = showMHdr ? MODEL_HDR * mr.h : 0.04 * mr.h;
+    const mFsPx = Math.min(11, Math.max(7, Math.min(mPxW / 9, mHdrH * 520 / 1.6)));
+    html += `<div class="tm-cell" style="
+      left:${px(mr.x+GGAP)};top:${px(mr.y+GGAP)};
+      width:${px(mr.w-GGAP*2)};height:${px(mHdrH-GGAP)};
+      background:${mColor};flex-direction:row;gap:5px;
+      padding:0 6px;z-index:3;border-radius:2px 2px 0 0">
+      ${showMHdr ? `
+        <span style="font-size:${(mFsPx*1.1).toFixed(1)}px;font-weight:700;color:#fff;
+          text-decoration:underline;text-underline-offset:2px;
+          font-family:'DM Mono',monospace;letter-spacing:0.04em">${model.label}</span>
+        <span style="font-size:${mFsPx.toFixed(1)}px;color:rgba(255,255,255,0.75);
+          font-family:'DM Mono',monospace">${fmtFlo(model.flo)} · ${mPct}%</span>
+      ` : ''}
+    </div>`;
+
+    // Area available for materials (below model header)
+    const matAreaX = mr.x + GGAP;
+    const matAreaY = mr.y + mHdrH;
+    const matAreaW = mr.w - GGAP * 2;
+    const matAreaH = mr.h - mHdrH - GGAP * 2;
+    if (matAreaW <= 0 || matAreaH <= 0) return;
+
+    // ── Level 2: split model region by material proportions ─────────────
+    // Unknown gets its own material-level slice
+    const unknownPct = Math.max(0, 100 - totalPct());
+    const matItems = [
+      ...state.map(mat => ({ ...mat, value: mat.pct / 100, isUnknown: false })),
+      ...(unknownPct > 0 ? [{ id: 'unknown', name: 'Unknown', color: '#c0b8aa',
+          value: unknownPct / 100, isUnknown: true, fittings: [{ name: 'Unknown', share: 1 }] }] : [])
+    ].filter(m => m.value > 0);
+
+    const matCells = treemapLayout(matItems);
+
+    matCells.forEach(mc => {
+      const mat    = mc;
+      const matX   = matAreaX + mc.x * matAreaW;
+      const matY   = matAreaY + mc.y * matAreaH;
+      const matW   = mc.w * matAreaW;
+      const matH   = mc.h * matAreaH;
+      const matPxW = matW * 860;
+      const matPxH = matH * 520;
+
+      if (mat.isUnknown) {
+        // Render unknown as a flat cell
+        const uUnits = Math.round(model.flo / OVERALL * unknownPct / 100 * OVERALL);
+        html += `<div class="tm-cell" style="
+          left:${px(matX+GAP)};top:${px(matY+GAP)};
+          width:${px(matW-GAP*2)};height:${px(matH-GAP*2)};
+          background:#c0b8aa;flex-direction:column"
+          title="${model.label} · Unknown · ${(model.flo / OVERALL * unknownPct / 100 * 100).toFixed(2)}% of total">
+          ${matPxW > 30 && matPxH > 14 ? `<span style="font-size:9px;color:rgba(0,0,0,0.4)">Unknown</span>` : ''}
+        </div>`;
+        return;
+      }
+
+      // Material header strip
+      const showMatHdr = matPxH > 28 && matPxW > 30;
+      const matHdrH = showMatHdr ? MAT_HDR * matH : 0.06 * matH;
+      const matTc   = textColor(mat.color);
+      const matFsPx = Math.min(10, Math.max(6, Math.min(matPxW / 8, matHdrH * 520 / 1.6)));
+
+      // Material header: colored strip with name label
+      html += `<div class="tm-cell tm-hdr" style="
+        left:${px(matX+GAP)};top:${px(matY+GAP)};
+        width:${px(matW-GAP*2)};height:${px(matHdrH-GAP)};
+        background:${mat.color};flex-direction:column;gap:1px;padding:2px 4px"
+        title="${model.label} · ${mat.name}: ${(model.flo / OVERALL * mat.pct).toFixed(1)}%">
+        ${matPxW > 30 && matPxH > 16 ? `<span class="tm-mat-name" style="color:${matTc};font-size:${matFsPx.toFixed(1)}px">${mat.name}</span>` : ''}
+      </div>`;
+
+      // Area for fittings
+      const fitAreaX = matX + GAP;
+      const fitAreaY = matY + matHdrH;
+      const fitAreaW = matW - GAP * 2;
+      const fitAreaH = matH - matHdrH - GAP * 2;
+      if (fitAreaW <= 0 || fitAreaH <= 0) return;
+
+      // ── Level 3: split material region by fitting shares ──────────────
+      const fitItems = mat.fittings.map((f, fi) => ({ ...f, value: f.share, fi, total: mat.fittings.length }));
+      const fitCells = treemapLayout(fitItems);
+
+      fitCells.forEach(fc => {
+        const bg   = shiftColor(mat.color, fc.fi, fc.total);
+        const tc   = textColor(bg);
+        const ax   = fitAreaX + fc.x * fitAreaW;
+        const ay   = fitAreaY + fc.y * fitAreaH;
+        const aw   = fc.w * fitAreaW;
+        const ah   = fc.h * fitAreaH;
+        const fpxW = aw * 860;
+        const fpxH = ah * 520;
+
+        // Units = model.flo × mat.pct/100 × fitting.share
+        const units = Math.round(model.flo * mat.pct / 100 * fc.share);
+        const pctOfTotal = (model.flo / OVERALL * mat.pct / 100 * fc.share * 100).toFixed(2);
+
+        const nLines = fpxH > 52 ? 3 : fpxH > 32 ? 2 : 1;
+        const fsPx   = Math.min(11, Math.max(6, Math.min(fpxW / 6.5, fpxH / (nLines * 1.4 * 1.5))));
+        const fs     = fsPx.toFixed(1) + 'px';
+        const fsLg   = (fsPx * 1.15).toFixed(1) + 'px';
+
+        let short = fc.name
+          .replace(' male adapter', '').replace(' (SharkBite)', ' (SB)')
+          .replace('Dielectric union to threaded nipple', 'Dielectric union')
+          .replace('Fernco rubber coupling to threaded nipple', 'Fernco')
+          .replace('Crimp/clamp insert ', 'Crimp ').replace('Expansion insert ', 'Expan. ')
+          .replace('Threaded NPT (rethread direct)', 'NPT').replace('Solvent cement', 'Solvent').trim();
+
+        html += `<div class="tm-cell tm-fit" style="
+          left:${px(ax+GAP/2)};top:${px(ay+GAP/2)};
+          width:${px(aw-GAP)};height:${px(ah-GAP)};
+          background:${bg};flex-direction:column;gap:1px;padding:2px 2px"
+          title="${model.label} · ${mat.name} · ${fc.name}: ${pctOfTotal}% of total">
+          ${fpxW > 20 && fpxH > 10 ? `<span class="tm-val-pct" style="color:${tc};font-size:${fs};font-weight:600">${pctOfTotal}%</span>` : ''}
+        </div>`;
+      });
+    });
+  });
+
+  // Build material + fitting key
+  const keyHtml = state.map(mat => {
+    // Short fitting names (same logic as cell rendering)
+    const fitRows = mat.fittings.map((f, fi) => {
+      const bg = shiftColor(mat.color, fi, mat.fittings.length);
+      let short = f.name
+        .replace(' male adapter', '').replace(' (SharkBite)', ' (SB)')
+        .replace('Dielectric union to threaded nipple', 'Dielectric union')
+        .replace('Fernco rubber coupling to threaded nipple', 'Fernco')
+        .replace('Crimp/clamp insert ', 'Crimp ').replace('Expansion insert ', 'Expan. ')
+        .replace('Threaded NPT (rethread direct)', 'NPT').replace('Solvent cement', 'Solvent').trim();
+      return `<div class="key-fit-item">
+        <div class="key-swatch key-fit-swatch" style="background:${bg}"></div>
+        <span class="key-fit-label">${short}</span>
+      </div>`;
+    }).join('');
+    return `<div class="key-mat-group">
+      <div class="key-mat-header">
+        <div class="key-swatch" style="background:${mat.color}"></div>
+        <span class="key-label">${mat.name}</span>
+      </div>
+      <div class="key-fit-list">${fitRows}</div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="split-landscape">
+      <div class="treemap-wrap" style="padding:8px 10px">
+        <div class="bar-label">By model · area = % of ${tabDef.splitModels ? "¾\" + 1¼\" install base" : "total install base"} · hover for detail</div>
+        <div id="treemap-canvas" style="height:440px">${html}</div>
+      </div>
+      <div class="split-key">${keyHtml}</div>
+      <div class="totals-row">
+        <div class="total-card dark">
+          <div class="tc-label">Total accounted</div>
+          <div class="tc-value">${totalPct().toFixed(1)}%</div>
+          <div class="tc-homes">across all models</div>
+        </div>
+        <div class="total-card light">
+          <div class="tc-label">Unknown / unaccounted</div>
+          <div class="tc-value" style="color:var(--text-muted)">${Math.max(0,100-totalPct()).toFixed(1)}%</div>
+          <div class="tc-homes">of install base</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+
+function render() {
+  const tot = totalPct();
+  const unknownPct = Math.max(0, 100 - tot);
+
+  // Material panels — fittings ALWAYS visible, always derived from parent pct
+  const panels = state.map((m, i) => {
+    const fitRows = m.fittings.map((f, fi) => {
+      const fp = m.pct * f.share;          // % of total Flo base (for treemap)
+      const shareAsPct = (f.share * 100);  // % of parent material (for slider display)
+      return `
+        <div class="fit-row">
+          <div class="fit-main">
+            <span class="fit-name">${f.name}</span>
+            <span class="fit-pct" style="color:${m.color}">${shareAsPct.toFixed(1)}% of ${m.name}</span>
+            <span class="fit-homes">${fmtFlo(Math.round(m.pct * f.share / 100 * TABS[currentTab].flo))} units</span>
+          </div>
+          <div class="fit-slider-row">
+            <span class="sl-end">0%</span>
+            <input type="range" id="fsl-${i}-${fi}" min="0" max="100" step="1" value="${shareAsPct.toFixed(0)}"
+              oninput="updateFitShare(${i}, ${fi}, +this.value)">
+            <span class="sl-end r">100%</span>
+          </div>
+          <div class="fit-bar-bg">
+            <div class="fit-bar-fill" style="width:${shareAsPct}%;background:${m.color}55"></div>
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="mat-panel" style="border-left-color:${m.color}">
+        <div class="mat-top">
+          <span class="mat-name">${m.name}</span>
+          <div class="slider-wrap">
+            <span class="sl-end">0%</span>
+            <input type="range" id="sl-${m.id}" min="0" max="80" step="1" value="${m.pct}">
+            <span class="sl-end r">80%</span>
+          </div>
+          <span class="mat-pct-val" style="color:${m.color}">${m.pct}%</span>
+          <span class="mat-homes-val">${fmtFlo(toFlo(m.pct))} units</span>
+        </div>
+        <div class="fittings-section">
+          <div class="fit-header">
+            <span>Fitting type</span>
+            <span>% total</span>
+            <span>Est. homes</span>
+          </div>
+          ${fitRows}
+        </div>
+      </div>`;
+  }).join('');
+
+  // Split tab panels: same sliders, no unit counts, pct-only labels
+  const splitPanels = state.map((m, i) => {
+    const fitRows = m.fittings.map((f, fi) => {
+      const shareAsPct = (f.share * 100);
+      return `
+        <div class="fit-row">
+          <div class="fit-main">
+            <span class="fit-name">${f.name}</span>
+            <span class="fit-pct" style="color:${m.color}">${shareAsPct.toFixed(1)}% of ${m.name}</span>
+          </div>
+          <div class="fit-slider-row">
+            <span class="sl-end">0%</span>
+            <input type="range" id="fsl-${i}-${fi}" min="0" max="100" step="1" value="${shareAsPct.toFixed(0)}"
+              oninput="updateFitShare(${i}, ${fi}, +this.value)">
+            <span class="sl-end r">100%</span>
+          </div>
+          <div class="fit-bar-bg">
+            <div class="fit-bar-fill" style="width:${shareAsPct}%;background:${m.color}55"></div>
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="mat-panel" style="border-left-color:${m.color}">
+        <div class="mat-top">
+          <span class="mat-name">${m.name}</span>
+          <div class="slider-wrap">
+            <span class="sl-end">0%</span>
+            <input type="range" id="sl-${m.id}" min="0" max="80" step="1" value="${m.pct}">
+            <span class="sl-end r">80%</span>
+          </div>
+          <span class="mat-pct-val" style="color:${m.color}">${m.pct}%</span>
+        </div>
+        <div class="fittings-section">
+          <div class="fit-header">
+            <span>Fitting type</span>
+            <span>% of material</span>
+          </div>
+          ${fitRows}
+        </div>
+      </div>`;
+  }).join('');
+
+  const tabBar = TABS.map((t, i) =>
+    `<button class="tab-btn ${i === currentTab ? 'active' : ''}" onclick="switchTab(${i})">${t.label}</button>`
+  ).join('');
+
+  const tabSubtitle = currentTab === 0
+    ? `Overall · ${fmt(TABS[0].flo)} Flo units`
+    : `${TABS[currentTab].label} devices · ${fmtFlo(TABS[currentTab].flo)} total units`;
+
+  document.getElementById('app').innerHTML = `
+    <div class="tabs">${tabBar}</div>
+    <div class="tab-panel">
+      <div class="tab-subtitle">${tabSubtitle}</div>
+      ${TABS[currentTab].isSplit ? `
+        ${renderSplitTab()}
+        <div class="right-col">
+          <div class="controls-row">
+            <span class="controls-note">Adjust sliders to explore uncertainty.</span>
+            <button class="reset-btn" onclick="reset()">↺ Reset</button><button class="reset-btn save-btn" onclick="saveDefaults();this.textContent='✓ Saved';setTimeout(()=>this.textContent='⊙ Save as default',1500)">⊙ Save as default</button><button class="reset-btn export-btn" onclick="exportTreemap()">↓ Export PNG</button>
+          </div>
+          <div class="materials">${splitPanels}</div>
+        </div>
+      ` : `
+      <div class="main-layout">
+        <div class="left-col">
+          ${renderTreemap(tot, unknownPct)}
+          <div class="totals-row">
+            <div class="total-card dark">
+              <div class="tc-label">Total accounted</div>
+              <div class="tc-value">${tot.toFixed(1)}%</div>
+              <div class="tc-homes">${fmtFlo(Math.round(tot/100*TABS[currentTab].flo))} of ${fmtFlo(TABS[currentTab].flo)} units</div>
+            </div>
+            <div class="total-card light">
+              <div class="tc-label">Unknown / unaccounted</div>
+              <div class="tc-value" style="color:var(--text-muted)">${unknownPct.toFixed(1)}%</div>
+              <div class="tc-homes">${fmtFlo(Math.round(unknownPct/100*TABS[currentTab].flo))} units</div>
+            </div>
+          </div>
+        </div>
+        <div class="right-col">
+          <div class="controls-row">
+            <span class="controls-note">Adjust sliders to explore uncertainty.</span>
+            <button class="reset-btn" onclick="reset()">↺ Reset</button><button class="reset-btn save-btn" onclick="saveDefaults();this.textContent='✓ Saved';setTimeout(()=>this.textContent='⊙ Save as default',1500)">⊙ Save as default</button><button class="reset-btn export-btn" onclick="exportTreemap()">↓ Export PNG</button>
+          </div>
+          <div class="materials">${panels}</div>
+        </div>
+      </div>
+      `}
+    </div>
+  `;
+
+  document.getElementById('footer').innerHTML = `
+    <strong>Methodology:</strong> Directional estimates derived from era-based U.S. construction history, ACS housing stock age distribution (2023), and plumbing industry market data.
+    Total intentionally sums to ~93% — the remaining ~7% represents unknown or unaccounted materials.
+    Fitting sub-shares are divided equally within each material as a starting-point assumption only — not survey-backed.
+    Base: Flo device install base of 561,148 units.
+  `;
+
+  // Bind material sliders
+  state.forEach((m, i) => {
+    const sl = document.getElementById(`sl-${m.id}`);
+    if (!sl) return;
+    sl.oninput = e => { state[i].pct = +e.target.value; render(); };
+  });
+
+  // Inject fitting slider thumb colors dynamically
+  let fitThumbStyle = document.getElementById('fit-thumb-style');
+  if (!fitThumbStyle) {
+    fitThumbStyle = document.createElement('style');
+    fitThumbStyle.id = 'fit-thumb-style';
+    document.head.appendChild(fitThumbStyle);
+  }
+  fitThumbStyle.textContent = state.map((m, i) =>
+    m.fittings.map((f, fi) => `
+      #fsl-${i}-${fi}::-webkit-slider-thumb {
+        -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+        background: ${m.color}aa; border: 2px solid var(--bg);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2); cursor: pointer;
+      }
+      #fsl-${i}-${fi}::-moz-range-thumb {
+        width: 14px; height: 14px; border-radius: 50%;
+        background: ${m.color}aa; border: 2px solid var(--bg); cursor: pointer;
+      }
+    `).join('')
+  ).join('');
+}
+
+function switchTab(i) {
+  currentTab = i;
+  render();
+}
+
+function isSharkBite(f) {
+  return f.name.toLowerCase().includes('sharkbite') || f.name.toLowerCase().includes('push-fit');
+}
+
+function updateFitShare(matIdx, fitIdx, newSharePct) {
+  const fittings = state[matIdx].fittings;
+  const n = fittings.length;
+  if (n <= 1) return;
+
+  // Detect SharkBite scenario: exactly 3 fittings, one is SharkBite, and the
+  // dragged fitting is NOT SharkBite → keep SharkBite fixed, scale the other non-SB fitting
+  const sbIdx = n === 3 ? fittings.findIndex(f => isSharkBite(f)) : -1;
+  const hasSbRule = sbIdx !== -1 && fitIdx !== sbIdx;
+
+  if (hasSbRule) {
+    // SharkBite share stays fixed
+    const sbShare = fittings[sbIdx].share;
+    const maxAllowed = Math.max(0, 1 - sbShare);
+
+    // Clamp dragged fitting to what's available after SharkBite
+    const newShare = Math.min(newSharePct / 100, maxAllowed);
+    fittings[fitIdx].share = newShare;
+
+    // The remaining non-SB, non-dragged fitting takes whatever is left
+    const otherIdx = fittings.findIndex((f, fi) => fi !== fitIdx && fi !== sbIdx);
+    if (otherIdx !== -1) {
+      fittings[otherIdx].share = Math.max(0, maxAllowed - newShare);
+    }
+  } else {
+    // Standard behaviour: dragged fitting sets its share,
+    // all other fittings (including any SharkBite if user drags SB directly) scale proportionally
+    fittings[fitIdx].share = newSharePct / 100;
+    const remaining = Math.max(0, 1 - fittings[fitIdx].share);
+    const otherTotal = fittings.reduce((s, f, fi) => fi !== fitIdx ? s + f.share : s, 0);
+
+    if (otherTotal > 0) {
+      fittings.forEach((f, fi) => {
+        if (fi !== fitIdx) f.share = (f.share / otherTotal) * remaining;
+      });
+    } else {
+      const evenShare = remaining / (n - 1);
+      fittings.forEach((f, fi) => { if (fi !== fitIdx) f.share = evenShare; });
+    }
+  }
+
+  render();
+}
+
+// Snapshot of saved defaults — initially cloned from DEFAULTS, updated by saveDefaults()
+function saveDefaults() {
+  savedDefaults = state.map(d => ({ ...d, fittings: d.fittings.map(f => ({...f})) }));
+  const snapshot = state.map(m => ({
+    id: m.id,
+    pct: m.pct,
+    fittings: m.fittings.map(f => ({ name: f.name, share: f.share }))
+  }));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  } catch(e) {
+    console.warn('localStorage unavailable:', e);
+  }
+}
+
+function reset() {
+  state = savedDefaults.map(d => ({ ...d, fittings: d.fittings.map(f => ({...f})) }));
+  render();
+}
+
+// Inject per-material thumb colors
+const thumbStyle = document.createElement('style');
+thumbStyle.textContent = DEFAULTS.map(m => `
+  #sl-${m.id}::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+    background: ${m.color}; border: 2px solid var(--bg);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2); cursor: pointer;
+  }
+  #sl-${m.id}::-moz-range-thumb {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: ${m.color}; border: 2px solid var(--bg); cursor: pointer;
+  }
+`).join('');
+document.head.appendChild(thumbStyle);
+
+render();
+</script>
+</body>
+</html>
