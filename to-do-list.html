@@ -88,8 +88,43 @@
     border-bottom:1px solid var(--line);padding-bottom:6px;
   }
   .section-label .count{color:var(--spent)}
+  .label-right{display:flex;align-items:center;gap:10px}
+  .expand-toggle{
+    border:1px solid var(--line-strong);background:#fff;color:var(--ink-soft);
+    font-family:"SF Mono",ui-monospace,monospace;font-size:9.5px;letter-spacing:.1em;
+    text-transform:uppercase;padding:3px 7px;border-radius:6px;cursor:pointer;transition:.12s;
+  }
+  .expand-toggle:hover{border-color:var(--sage);color:var(--sage)}
+  .expand-toggle.on{background:var(--sage);border-color:var(--sage);color:#fff}
+
+  /* expanded to-do list: centered modal overlay (like the detail view) */
+  .todo-modal-scrim{
+    position:fixed;inset:0;background:rgba(20,38,31,.42);backdrop-filter:blur(2px);
+    display:flex;align-items:center;justify-content:center;z-index:50;padding:24px;
+  }
+  .todo-modal-scrim[hidden]{display:none}
+  .todo-modal{
+    background:var(--panel);border:1px solid var(--line-strong);border-radius:16px;
+    width:min(620px,94vw);height:min(88vh,900px);position:relative;
+    box-shadow:0 24px 60px -18px rgba(20,38,31,.5);padding:24px 26px 20px;
+    display:flex;flex-direction:column;gap:14px;
+  }
+  .todo-modal-head{display:flex;align-items:baseline;justify-content:space-between;
+    border-bottom:1px solid var(--line);padding-bottom:12px}
+  .todo-modal-head h2{margin:0;font-size:20px;font-weight:600}
+  .todo-modal-head .sub{font-size:12px;color:var(--spent);font-style:italic}
+  .todo-modal-close{position:absolute;top:16px;right:18px;border:none;background:none;
+    font-size:24px;line-height:1;color:var(--spent);cursor:pointer;z-index:2}
+  .todo-modal-close:hover{color:var(--accent-deep)}
+  /* the list host inside the modal fills the space and scrolls; rows are roomier */
+  .todo-modal-body{flex:1;min-height:0;overflow-y:auto;padding-right:6px}
+  .todo-modal-body #todoList{gap:11px}
+  .todo-modal-body #todoList .task{padding:14px 12px}
+  .todo-modal-body #todoList .task .title{font-size:15px}
+  .todo-modal-body #todoList .task .prio{font-size:12px;top:10px;right:12px}
 
   .list{display:flex;flex-direction:column;gap:7px}
+  .list-scroll.drop-return{outline:2px dashed var(--sage);outline-offset:3px;border-radius:8px;background:var(--sage-tint)}
   .task{
     display:flex;align-items:flex-start;gap:9px;
     background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);
@@ -210,7 +245,7 @@
   /* modal */
   .modal-scrim{
     position:fixed;inset:0;background:rgba(20,38,31,.42);backdrop-filter:blur(2px);
-    display:flex;align-items:center;justify-content:center;z-index:50;padding:24px;
+    display:flex;align-items:center;justify-content:center;z-index:60;padding:24px;
   }
   .modal-scrim[hidden]{display:none}
   .modal{
@@ -305,7 +340,12 @@
     </div>
 
     <div class="list-section todo-section">
-      <div class="section-label">To-do — by priority <span class="count" id="todoCount"></span></div>
+      <div class="section-label">To-do — by priority
+        <span class="label-right">
+          <span class="count" id="todoCount"></span>
+          <button class="expand-toggle" id="todoExpandBtn" title="Expand for easier reordering">⤢ Expand</button>
+        </span>
+      </div>
       <div class="list list-scroll" id="todoList"></div>
     </div>
 
@@ -338,6 +378,20 @@
     <div class="grid" id="grid"></div>
     <p class="hint">Drag a task onto a slot to schedule it. Drag the handle at the bottom of a block to resize (15-min steps). Check a box to complete — the block stays on the calendar; missed items come back to the top of your list.</p>
   </main>
+</div>
+
+<!-- ============ EXPANDED TO-DO LIST MODAL ============ -->
+<div class="todo-modal-scrim" id="todoModalScrim" hidden>
+  <div class="todo-modal" role="dialog" aria-modal="true" aria-label="To-do list">
+    <button class="todo-modal-close" id="todoModalClose" title="Close">×</button>
+    <div class="todo-modal-head">
+      <h2>To-do — by priority</h2>
+      <span class="sub">Drag to reorder</span>
+    </div>
+    <div class="todo-modal-body" id="todoModalBody">
+      <!-- the real #todoList is moved in here while expanded, then moved back on close -->
+    </div>
+  </div>
 </div>
 
 <!-- ============ DETAIL MODAL ============ -->
@@ -426,6 +480,12 @@ const STORE_KEY = "cadence.v1";
 */
 let state = { tasks: [], seq: 1, lastWeekKey: null };
 
+/* ---------- Undo history ---------- */
+const undoStack = [];
+const UNDO_LIMIT = 50;
+let prevSerialized = null;     // state as of the last save (the "before" for the next change)
+let suppressUndo = false;      // set during automatic (non-user) saves so they don't pollute history
+
 function load(){
   try{
     const raw = localStorage.getItem(STORE_KEY);
@@ -436,8 +496,37 @@ function load(){
   if(state.lastWeekKey===undefined) state.lastWeekKey = null;
   // stamp any pre-existing scheduled blocks (from before week-tracking) with the current week
   state.tasks.forEach(t=>{ if(t.status==='scheduled' && !t.weekKey) t.weekKey = currentWeekKey(); });
+  prevSerialized = JSON.stringify(state);
 }
-function save(){ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+function save(){
+  // push the pre-change snapshot onto the undo stack (unless this is an automatic save)
+  if(!suppressUndo && prevSerialized!==null){
+    const cur = JSON.stringify(state);
+    if(cur !== prevSerialized){
+      undoStack.push(prevSerialized);
+      if(undoStack.length > UNDO_LIMIT) undoStack.shift();
+    }
+  }
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  prevSerialized = JSON.stringify(state);
+}
+// Run an automatic mutation (sweep/rollover) without recording it as an undo step.
+function saveSilently(){
+  suppressUndo = true;
+  save();
+  suppressUndo = false;
+}
+function undo(){
+  if(!undoStack.length) return;
+  const snap = undoStack.pop();
+  try{
+    state = JSON.parse(snap);
+    prevSerialized = snap;                     // don't let the restore itself become an undo step
+    localStorage.setItem(STORE_KEY, snap);
+    closeDetail && document.getElementById('modalScrim') && (document.getElementById('modalScrim').hidden = true);
+    render();
+  }catch(e){ console.warn('undo failed', e); }
+}
 function uid(){ return "t" + (state.seq++) + "-" + Date.now().toString(36); }
 
 /* ---------- Detail helpers ---------- */
@@ -538,7 +627,7 @@ function sweepOverdue(){
       }
     }
   }
-  if(changed) save();
+  if(changed) saveSilently();
 }
 function minOrder(){
   const os = state.tasks.filter(t=>t.status==='todo').map(t=>t.order);
@@ -649,7 +738,7 @@ function rolloverWeeks(){
     }
   }
 
-  if(changed) save();
+  if(changed) saveSilently();
 }
 
 /* ---------- Completion ---------- */
@@ -1027,8 +1116,23 @@ function placeTask(id, dayIndex, slot, len){
   render();
 }
 
-/* ---------- Series copy / paste + context menus ---------- */
-let seriesClipboardId = null;   // id of the block that was right-click-copied
+/* Return a scheduled block to the to-do list (drag calendar -> list).
+   Clears its calendar placement and any completed shadow. */
+function unscheduleTask(id){
+  const t = state.tasks.find(x=>x.id===id);
+  if(!t || t.status!=='scheduled') return;
+  // drop any completed-shadow this block had
+  state.tasks = state.tasks.filter(x=>x.shadowOf!==t.id);
+  t.status = 'todo';
+  t.checked = false;
+  t.spent = false;
+  t.order = minOrder() - 1;       // place at top priority
+  delete t.dayIndex; delete t.startSlot; delete t.lenSlots;
+  delete t.weekKey; delete t.childId; delete t.completedAt;
+  // a series instance pulled back to the list is no longer a calendar occurrence
+  if(t.seriesId) delete t.seriesId;
+  save(); render();
+}
 
 function newSeriesId(){ return 's' + (state.seq++) + '-' + Date.now().toString(36); }
 
@@ -1121,6 +1225,17 @@ document.addEventListener('click', closeContextMenu);
 document.addEventListener('scroll', closeContextMenu, true);
 document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeContextMenu(); });
 
+// Ctrl+Z / Cmd+Z: undo most recent change (skip when typing in a field, so native text-undo works)
+document.addEventListener('keydown', (e)=>{
+  const z = (e.key==='z' || e.key==='Z');
+  if(!z || !(e.ctrlKey || e.metaKey) || e.shiftKey) return;
+  const el = document.activeElement;
+  const typing = el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable);
+  if(typing) return;               // let the browser undo text inside inputs
+  e.preventDefault();
+  undo();
+});
+
 /* ---------- Move an existing block (re-drag / reschedule) ---------- */
 function enableBlockDrag(b, t){
   b.setAttribute('draggable','true');
@@ -1191,6 +1306,28 @@ document.getElementById('addBtn').addEventListener('click', addTask);
 document.getElementById('newTask').addEventListener('keydown', e=>{ if(e.key==='Enter') addTask(); });
 
 /* ---------- Drag from list: set dragTaskId via SortableJS + native ---------- */
+// Expanded to-do list modal: physically move the real #todoList into the overlay
+// (moving, not cloning, keeps SortableJS + all handlers intact), then move it back.
+const todoScrim = document.getElementById('todoModalScrim');
+const todoModalBody = document.getElementById('todoModalBody');
+const todoHomeParent = todoListEl.parentNode;   // the sidebar .list-section wrapper
+function openTodoModal(){
+  todoModalBody.appendChild(todoListEl);        // move the live list into the modal
+  todoScrim.hidden = false;
+  const btn=document.getElementById('todoExpandBtn'); btn.classList.add('on'); btn.textContent='⤡ Collapse';
+}
+function closeTodoModal(){
+  todoHomeParent.appendChild(todoListEl);       // move it back to the sidebar
+  todoScrim.hidden = true;
+  const btn=document.getElementById('todoExpandBtn'); btn.classList.remove('on'); btn.textContent='⤢ Expand';
+}
+document.getElementById('todoExpandBtn').addEventListener('click', ()=>{
+  if(todoScrim.hidden) openTodoModal(); else closeTodoModal();
+});
+document.getElementById('todoModalClose').addEventListener('click', closeTodoModal);
+todoScrim.addEventListener('click', (e)=>{ if(e.target===todoScrim) closeTodoModal(); });
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !todoScrim.hidden) closeTodoModal(); });
+
 new Sortable(todoListEl, {
   animation:150,
   ghostClass:'drag-ghost',
@@ -1207,6 +1344,24 @@ new Sortable(todoListEl, {
 todoListEl.addEventListener('dragstart', (e)=>{
   const task = e.target.closest('.task');
   if(task) dragTaskId = task.dataset.id;
+});
+// Drop a calendar block onto the to-do list to unschedule it (calendar -> list)
+todoListEl.addEventListener('dragover', (e)=>{
+  const t = dragTaskId && state.tasks.find(x=>x.id===dragTaskId);
+  if(t && t.status==='scheduled'){ e.preventDefault(); todoListEl.classList.add('drop-return'); }
+});
+todoListEl.addEventListener('dragleave', (e)=>{
+  if(e.target===todoListEl) todoListEl.classList.remove('drop-return');
+});
+todoListEl.addEventListener('drop', (e)=>{
+  const id = dragTaskId;
+  const t = id && state.tasks.find(x=>x.id===id);
+  todoListEl.classList.remove('drop-return');
+  if(t && t.status==='scheduled'){
+    e.preventDefault();
+    unscheduleTask(id);
+    dragTaskId = null;
+  }
 });
 
 /* ---------- CSV export / import (merge, dedup by id) ---------- */
