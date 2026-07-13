@@ -1,0 +1,1370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cadence — To-Do & Scheduler</title>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<style>
+  :root{
+    --ink:#14261f;            /* deep pine */
+    --ink-soft:#3d5548;
+    --paper:#f3efe6;          /* warm oat */
+    --panel:#fbf9f3;
+    --line:#d9d2c3;
+    --line-strong:#c3b9a4;
+    --accent:#c05a2e;         /* burnt ochre */
+    --accent-deep:#8f3f1d;
+    --sage:#5a7d66;
+    --sage-tint:#e4ecdf;
+    --gold:#caa64a;
+    --spent:#a89f8d;
+    --spent-bg:#e9e4d7;
+    --shadow:0 1px 0 rgba(20,38,31,.04), 0 8px 24px -12px rgba(20,38,31,.28);
+    --slot-h:22px;            /* height of one 15-min row */
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{display:grid;grid-template-columns:340px 1fr;gap:0;height:100vh}
+  @media (max-width:900px){
+    .wrap{grid-template-columns:1fr;height:auto}
+    aside{height:auto;overflow:visible}
+    .list-section{flex:none}
+    .list-scroll{max-height:340px}   /* cap on mobile, but the page scrolls normally */
+  }
+
+  /* ---------- Sidebar ---------- */
+  aside{
+    background:var(--panel);
+    border-right:1px solid var(--line);
+    padding:22px 20px;
+    overflow:hidden;                 /* sections scroll internally, not the whole sidebar */
+    height:100vh;
+    display:flex;flex-direction:column;gap:18px;
+  }
+  /* each list section flexes to share leftover height and scrolls its own list */
+  .list-section{display:flex;flex-direction:column;min-height:0;flex:1 1 0}
+  .todo-section{flex-grow:1.6}        /* give the to-do list a bit more room than completed */
+  .list-scroll{overflow-y:auto;padding-right:4px;min-height:0}
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .brand h1{
+    font-size:27px;margin:0;letter-spacing:-.01em;font-weight:600;
+  }
+  .brand .tick{
+    font-family:"SF Mono",ui-monospace,Menlo,monospace;
+    font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--accent);
+  }
+  .lede{font-size:13px;color:var(--ink-soft);margin:-8px 0 0;line-height:1.5}
+
+  .add-row{display:flex;gap:12px;align-items:stretch}
+  .add-row input[type=text]{
+    flex:1;min-width:0;border:1px solid var(--line-strong);background:#fff;
+    padding:10px 12px;border-radius:9px;font:inherit;font-size:14px;color:var(--ink);
+  }
+  .add-row input:focus{outline:2px solid var(--sage);outline-offset:1px}
+  .add-row .btn-primary{flex:none}
+  button{font:inherit;cursor:pointer}
+  .btn{
+    border:1px solid var(--line-strong);background:#fff;color:var(--ink);
+    padding:9px 12px;border-radius:9px;font-size:13px;transition:.12s;
+  }
+  .btn:hover{border-color:var(--ink-soft)}
+  .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn-primary:hover{background:var(--accent-deep);border-color:var(--accent-deep)}
+  .allday-toggle{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-soft);margin-top:8px}
+  .allday-toggle input{width:15px;height:15px;accent-color:var(--sage)}
+
+  .section-label{
+    font-family:"SF Mono",ui-monospace,Menlo,monospace;
+    font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--sage);
+    display:flex;justify-content:space-between;align-items:center;
+    border-bottom:1px solid var(--line);padding-bottom:6px;
+  }
+  .section-label .count{color:var(--spent)}
+
+  .list{display:flex;flex-direction:column;gap:7px}
+  .task{
+    display:flex;align-items:flex-start;gap:9px;
+    background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:8px;padding:9px 10px;box-shadow:var(--shadow);
+    cursor:grab;position:relative;
+  }
+  .task.allday{border-left-color:var(--gold)}
+  .task:active{cursor:grabbing}
+  .task .cb{margin-top:2px;width:16px;height:16px;accent-color:var(--sage);flex:none;cursor:pointer}
+  .task .body{flex:1;min-width:0;padding-right:22px}
+  .task .title{font-size:14px;line-height:1.35;word-break:break-word}
+  .task .meta{font-size:11px;color:var(--spent);margin-top:2px;font-family:"SF Mono",ui-monospace,monospace;min-height:14px}
+  .prio{
+    font-family:"SF Mono",ui-monospace,monospace;font-size:10px;color:var(--spent);
+    position:absolute;top:6px;right:8px;
+  }
+  .task .del{
+    position:absolute;bottom:6px;right:7px;border:none;background:none;color:var(--spent);
+    font-size:15px;line-height:1;padding:2px;opacity:0;transition:.12s;
+  }
+  .task:hover .del{opacity:1}
+  .task .del:hover{color:var(--accent-deep)}
+  .completed .task{border-left-color:var(--sage);opacity:.8;cursor:default}
+  .completed .title{text-decoration:line-through;color:var(--ink-soft)}
+
+  .empty{font-size:12.5px;color:var(--spent);font-style:italic;padding:6px 2px}
+
+  .backup{display:flex;gap:8px;margin-top:auto;padding-top:14px;border-top:1px solid var(--line)}
+  .backup .btn{flex:1;font-size:12px;padding:8px}
+  .btn-summary{width:100%;margin-top:8px;font-size:12.5px;padding:9px;
+    background:var(--sage);border-color:var(--sage);color:#fff}
+  .btn-summary:hover{background:#4a6b56;border-color:#4a6b56}
+
+  /* ---------- Calendar ---------- */
+  main{overflow:auto;padding:22px 24px}
+  .cal-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:14px;gap:16px;flex-wrap:wrap}
+  .cal-head h2{margin:0;font-size:20px;font-weight:600}
+  .cal-head .range{font-size:13px;color:var(--ink-soft)}
+  .legend{display:flex;gap:16px;font-size:11.5px;color:var(--ink-soft);align-items:center}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+
+  .grid{
+    display:grid;
+    grid-template-columns:56px repeat(5,1fr);
+    border:1px solid var(--line-strong);border-radius:12px;overflow:hidden;
+    background:var(--panel);min-width:760px;
+  }
+  .corner{background:var(--panel);border-bottom:1px solid var(--line-strong);border-right:1px solid var(--line)}
+  .col-head{
+    text-align:center;padding:9px 4px;border-bottom:1px solid var(--line-strong);
+    border-right:1px solid var(--line);background:var(--panel);
+  }
+  .col-head:last-child{border-right:none}
+  .col-head .dow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-family:"SF Mono",monospace;color:var(--sage)}
+  .col-head .date{font-size:19px;font-weight:600;line-height:1.1}
+  .col-head.today .date{color:var(--accent)}
+  .col-head.today{background:var(--sage-tint)}
+
+  .time-col{border-right:1px solid var(--line);background:var(--panel)}
+  .hour-label{
+    height:calc(var(--slot-h) * 4);position:relative;
+    font-size:10.5px;color:var(--spent);text-align:right;padding-right:7px;
+    font-family:"SF Mono",monospace;border-bottom:1px solid var(--line);
+  }
+  .hour-label span{position:relative;top:-6px}
+
+  .day-col{position:relative;border-right:1px solid var(--line)}
+  .day-col:last-child{border-right:none}
+  .slot{
+    height:var(--slot-h);border-bottom:1px dashed transparent;
+  }
+  .slot.hour-line{border-bottom:1px solid var(--line)}
+  .slot.quarter-line{border-bottom:1px dotted var(--line)}
+  .day-col.today{background:rgba(90,125,102,.05)}
+  .slot.drop-ok{background:var(--sage-tint)}
+  .slot.drop-bad{background:#f2d9cf}
+
+  /* Scheduled blocks */
+  .block{
+    position:absolute;left:3px;right:3px;border-radius:7px;
+    background:#fff;border:1px solid var(--line-strong);border-left:3px solid var(--accent);
+    padding:4px 6px 4px 7px;font-size:12px;overflow:hidden;box-shadow:var(--shadow);
+    display:flex;flex-direction:column;gap:2px;cursor:grab;z-index:2;
+  }
+  .block.allday{border-left-color:var(--gold);background:#fffdf5;z-index:1}
+  .block.spent{background:var(--spent-bg);border-color:var(--line);border-left-color:var(--spent);color:var(--spent);z-index:1}
+  .block.spent .b-title{color:var(--spent)}
+  .block .b-top{display:flex;align-items:flex-start;gap:6px}
+  .block .cb{width:14px;height:14px;accent-color:var(--sage);flex:none;margin-top:1px;cursor:pointer}
+  .block .b-title{font-size:12px;line-height:1.25;word-break:break-word;font-weight:500}
+  .block.checked .b-title{text-decoration:line-through}
+  .block .b-time{font-size:10px;color:var(--spent);font-family:"SF Mono",monospace}
+  .block .b-del{
+    margin-left:auto;flex:none;border:none;background:none;color:var(--spent);
+    font-size:15px;line-height:1;padding:0 1px;cursor:pointer;opacity:0;transition:.12s;
+  }
+  .block:hover .b-del{opacity:1}
+  .block .b-del:hover{color:var(--accent-deep)}
+  .resize{
+    position:absolute;left:0;right:0;bottom:0;height:8px;cursor:ns-resize;
+  }
+  .resize::after{content:"";position:absolute;left:50%;bottom:2px;transform:translateX(-50%);
+    width:20px;height:2px;border-radius:2px;background:var(--line-strong)}
+  .block.spent .resize{display:none}
+
+  /* expand icon shared by all item types */
+  .expand{
+    border:none;background:none;color:var(--spent);cursor:pointer;
+    font-size:13px;line-height:1;padding:2px 3px;opacity:0;transition:.12s;flex:none;
+  }
+  .task:hover .expand, .block:hover .expand{opacity:.85}
+  .expand:hover{color:var(--sage) !important;opacity:1 !important}
+  .task .expand{position:absolute;bottom:6px;right:26px}
+  .completed .task .expand{position:static;margin-left:auto}
+  .block .b-exp{margin-left:2px}
+
+  /* modal */
+  .modal-scrim{
+    position:fixed;inset:0;background:rgba(20,38,31,.42);backdrop-filter:blur(2px);
+    display:flex;align-items:center;justify-content:center;z-index:50;padding:24px;
+  }
+  .modal-scrim[hidden]{display:none}
+  .modal{
+    background:var(--panel);border:1px solid var(--line-strong);border-radius:16px;
+    width:min(760px,94vw);max-height:88vh;overflow-y:auto;position:relative;
+    box-shadow:0 24px 60px -18px rgba(20,38,31,.5);padding:26px 32px 22px;
+    display:flex;flex-direction:column;gap:20px;
+  }
+  .modal-close{
+    position:absolute;top:16px;right:18px;border:none;background:none;
+    font-size:24px;line-height:1;color:var(--spent);cursor:pointer;z-index:2;
+  }
+  .modal-close:hover{color:var(--accent-deep)}
+  .modal-title{
+    font-family:inherit;font-size:23px;font-weight:600;color:var(--ink);
+    border:none;border-bottom:2px solid var(--line);background:none;
+    padding:2px 40px 9px 0;width:100%;   /* right padding keeps text clear of the × */
+  }
+  .modal-title:focus{outline:none;border-bottom-color:var(--sage)}
+  .modal-body{display:flex;flex-direction:column;gap:18px}
+  .modal-stub{color:var(--spent);font-style:italic;font-size:14px}
+  .modal-foot{
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    border-top:1px solid var(--line);padding-top:16px;
+  }
+  .modal-context{font-size:12px;color:var(--spent);font-family:"SF Mono",monospace}
+  .save-state{font-size:12px;color:var(--sage);font-family:"SF Mono",monospace;min-height:1em}
+  .modal-foot .btn-primary{margin-left:auto}   /* push Save to the right, no overlap */
+  .fld{display:block;margin:0}                 /* spacing handled by body gap */
+  .fld-label{display:block;font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--sage);margin-bottom:6px}
+  .fld input, .fld textarea, .fld select{
+    width:100%;font:inherit;font-size:14px;color:var(--ink);background:#fff;
+    border:1px solid var(--line-strong);border-radius:8px;padding:10px 12px;
+  }
+  .fld textarea{resize:vertical;min-height:60px;line-height:1.45}
+  .fld input:focus, .fld textarea:focus, .fld select:focus{outline:2px solid var(--sage);outline-offset:1px}
+  .fld select{cursor:pointer}
+  .fld-hint{display:block;font-size:11px;color:var(--spent);margin-top:4px;font-style:italic}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+  .chips:empty{display:none}
+  .chip{
+    display:inline-flex;align-items:center;gap:6px;font-size:12.5px;
+    background:var(--sage-tint);color:var(--ink);border:1px solid var(--sage);
+    border-radius:999px;padding:4px 6px 4px 11px;cursor:pointer;
+  }
+  .chip:hover{background:#d8e4d1}
+  .chip .chip-x{
+    border:none;background:none;color:var(--sage);font-size:15px;line-height:1;
+    cursor:pointer;padding:0 2px;
+  }
+  .chip .chip-x:hover{color:var(--accent-deep)}
+  .chip-meta{color:var(--spent);font-size:10.5px;font-family:"SF Mono",monospace}
+  .link-badge{display:inline-flex;align-items:center;gap:2px;color:var(--sage);
+    font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;white-space:nowrap}
+
+  .hint{font-size:11.5px;color:var(--spent);margin-top:12px;font-style:italic}
+  .drag-ghost{opacity:.4}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- ============ SIDEBAR ============ -->
+  <aside>
+    <div class="brand">
+      <h1>Cadence</h1><span class="tick">to-do · schedule</span>
+    </div>
+    <p class="lede">Add tasks, rank them by dragging, then drop them onto the week. Everything saves to this browser.</p>
+
+    <div>
+      <div class="add-row">
+        <input type="text" id="newTask" placeholder="What needs doing?" autocomplete="off">
+        <button class="btn btn-primary" id="addBtn">Add</button>
+      </div>
+      <label class="allday-toggle"><input type="checkbox" id="allDayFlag"> Background / all-day event (can overlap)</label>
+    </div>
+
+    <div class="list-section todo-section">
+      <div class="section-label">To-do — by priority <span class="count" id="todoCount"></span></div>
+      <div class="list list-scroll" id="todoList"></div>
+    </div>
+
+    <div class="list-section done-section">
+      <div class="section-label">Completed <span class="count" id="doneCount"></span></div>
+      <div class="list completed list-scroll" id="doneList"></div>
+    </div>
+
+    <div class="backup">
+      <button class="btn" id="exportBtn">Export Backup File</button>
+      <button class="btn" id="importBtn">Import Backup File</button>
+      <input type="file" id="importFile" accept=".csv" hidden>
+    </div>
+    <button class="btn btn-summary" id="summaryBtn">Export Weekly Summary</button>
+  </aside>
+
+  <!-- ============ CALENDAR ============ -->
+  <main>
+    <div class="cal-head">
+      <div>
+        <h2>This week</h2>
+        <div class="range" id="weekRange"></div>
+      </div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--accent)"></i>Task</span>
+        <span><i class="sw" style="background:var(--gold)"></i>All-day</span>
+        <span><i class="sw" style="background:var(--spent)"></i>Time passed</span>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <p class="hint">Drag a task onto a slot to schedule it. Drag the handle at the bottom of a block to resize (15-min steps). Check a box to complete — the block stays on the calendar; missed items come back to the top of your list.</p>
+  </main>
+</div>
+
+<!-- ============ DETAIL MODAL ============ -->
+<div class="modal-scrim" id="modalScrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <button class="modal-close" id="modalClose" title="Close">×</button>
+    <input type="text" class="modal-title" id="modalTitle" placeholder="Untitled task">
+    <div class="modal-body" id="modalBody">
+      <label class="fld">
+        <span class="fld-label">Key Initiative</span>
+        <input type="text" id="dKeyInitiative" list="initiativeList" autocomplete="off" placeholder="Type or pick a past initiative">
+        <datalist id="initiativeList"></datalist>
+      </label>
+      <label class="fld">
+        <span class="fld-label">Description</span>
+        <textarea id="dDescription" rows="3" placeholder="What is this?"></textarea>
+      </label>
+      <label class="fld">
+        <span class="fld-label">Priority</span>
+        <select id="dPriority">
+          <option value="High">High</option>
+          <option value="Mid">Mid</option>
+          <option value="Low">Low</option>
+        </select>
+        <span class="fld-hint" id="priorityHint"></span>
+      </label>
+      <label class="fld">
+        <span class="fld-label">Project</span>
+        <input type="text" id="dProject" placeholder="Project name">
+      </label>
+      <label class="fld">
+        <span class="fld-label">Deliverable</span>
+        <input type="text" id="dDeliverable" placeholder="What gets produced">
+      </label>
+      <label class="fld">
+        <span class="fld-label">Link to Deliverable</span>
+        <input type="text" id="dLink" placeholder="https:// (if applicable)">
+      </label>
+      <label class="fld">
+        <span class="fld-label">Completion Date</span>
+        <input type="datetime-local" id="dCompletion">
+        <span class="fld-hint">Auto-filled when marked complete; editable.</span>
+      </label>
+      <div class="fld">
+        <span class="fld-label">Related tiles</span>
+        <div class="chips" id="linkChips"></div>
+        <select id="linkPicker">
+          <option value="">+ Link a related tile…</option>
+        </select>
+        <span class="fld-hint">Links are mutual and work across the to-do list, calendar, and completed list.</span>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span class="modal-context" id="modalContext"></span>
+      <span class="save-state" id="saveState"></span>
+      <button class="btn btn-primary" id="modalSave">Save now</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   Cadence — Requirements 1 & 2
+   Vanilla JS + SortableJS, localStorage persistence, CSV backup
+   ========================================================= */
+
+const DAY_START = 7;      // 7 AM
+const DAY_END   = 18;     // 6 PM
+const STEP_MIN  = 15;
+const SLOTS_PER_HOUR = 60 / STEP_MIN;
+const TOTAL_SLOTS = (DAY_END - DAY_START) * SLOTS_PER_HOUR;
+const SLOT_PX = 22;       // keep in sync with --slot-h
+const STORE_KEY = "cadence.v1";
+
+/* ---------- State ----------
+   task = {
+     id, title, allDay,
+     status: 'todo' | 'scheduled' | 'completed',
+     // scheduling (when placed):
+     dayIndex (0=Mon..4=Fri), startSlot (0..TOTAL_SLOTS), lenSlots,
+     checked (bool),
+     spent (bool)            // becomes true once its end passes; permanent record
+     childId                 // link from a spent block to the fresh re-populated todo
+     order                   // sort order within the todo list
+   }
+*/
+let state = { tasks: [], seq: 1, lastWeekKey: null };
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(raw){ state = JSON.parse(raw); }
+  }catch(e){ console.warn("load failed", e); }
+  if(!state.tasks) state.tasks = [];
+  if(!state.seq) state.seq = 1;
+  if(state.lastWeekKey===undefined) state.lastWeekKey = null;
+  // stamp any pre-existing scheduled blocks (from before week-tracking) with the current week
+  state.tasks.forEach(t=>{ if(t.status==='scheduled' && !t.weekKey) t.weekKey = currentWeekKey(); });
+}
+function save(){ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+function uid(){ return "t" + (state.seq++) + "-" + Date.now().toString(36); }
+
+/* ---------- Detail helpers ---------- */
+const DETAIL_DEFAULTS = { keyInitiative:'', description:'', priority:'Low', project:'', deliverable:'', link:'', completionDate:'' };
+function ensureDetails(t){
+  if(!t.details) t.details = {...DETAIL_DEFAULTS};
+  else for(const k in DETAIL_DEFAULTS){ if(t.details[k]===undefined) t.details[k]=DETAIL_DEFAULTS[k]; }
+  return t.details;
+}
+// format a Date as a value usable by <input type="datetime-local"> in local time
+function toLocalDatetime(d){
+  const p = n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());
+}
+// Priority from scheduling latency: same day High, 1-2 days Mid, 3+ days Low.
+function priorityFromLatency(createdAt, scheduledDate){
+  if(!createdAt) return 'Low';
+  const c = new Date(createdAt); c.setHours(0,0,0,0);
+  const s = new Date(scheduledDate); s.setHours(0,0,0,0);
+  const days = Math.round((s - c)/86400000);
+  if(days <= 0) return 'High';
+  if(days <= 2) return 'Mid';
+  return 'Low';
+}
+// distinct Key Initiative values entered on any tile (for autocomplete)
+function pastInitiatives(){
+  const set = new Set();
+  state.tasks.forEach(t=>{ const v=t.details&&t.details.keyInitiative; if(v && v.trim()) set.add(v.trim()); });
+  return [...set].sort((a,b)=>a.localeCompare(b));
+}
+
+/* ---------- Week / time helpers ---------- */
+function mondayOf(d){
+  const x = new Date(d); x.setHours(0,0,0,0);
+  const day = x.getDay();                 // 0 Sun .. 6 Sat
+  const diff = (day === 0 ? -6 : 1 - day);
+  x.setDate(x.getDate() + diff);
+  return x;
+}
+// A stable string key for a week, e.g. "2026-07-13" (that week's Monday).
+function weekKey(date){
+  const m = mondayOf(date||new Date());
+  return m.getFullYear()+'-'+String(m.getMonth()+1).padStart(2,'0')+'-'+String(m.getDate()).padStart(2,'0');
+}
+function currentWeekKey(){ return weekKey(new Date()); }
+function mondayFromKey(key){
+  const [y,mo,da] = key.split('-').map(Number);
+  return new Date(y, mo-1, da, 0,0,0,0);
+}
+function weekDates(){
+  const mon = mondayOf(new Date());
+  return Array.from({length:5}, (_,i)=>{
+    const d = new Date(mon); d.setDate(mon.getDate()+i); return d;
+  });
+}
+// Resolve a block's real datetime from its OWN week (falls back to current week).
+function slotToDate(dayIndex, slot, wk){
+  const mon = wk ? mondayFromKey(wk) : mondayOf(new Date());
+  const d = new Date(mon); d.setDate(mon.getDate()+dayIndex);
+  const mins = DAY_START*60 + slot*STEP_MIN;
+  d.setHours(0, mins, 0, 0);
+  return d;
+}
+function fmtTime(slot){
+  const mins = DAY_START*60 + slot*STEP_MIN;
+  let h = Math.floor(mins/60), m = mins%60;
+  const ap = h>=12 ? "PM":"AM";
+  let hh = h%12; if(hh===0) hh=12;
+  return hh + (m? ":"+String(m).padStart(2,"0") : "") + ap;
+}
+
+/* ---------- Overdue sweep ----------
+   For each scheduled, not-yet-spent task whose end time has passed:
+     - mark spent = true (greyed, permanent)
+     - if unchecked: spawn a fresh todo (new id) at priority slot 1, link via childId
+*/
+function sweepOverdue(){
+  const now = new Date();
+  let changed = false;
+  for(const t of state.tasks){
+    if(t.status !== 'scheduled' || t.spent) continue;
+    const end = slotToDate(t.dayIndex, t.startSlot + t.lenSlots, t.weekKey);
+    if(now >= end){
+      t.spent = true; changed = true;
+      if(!t.checked){
+        const child = spawnReturnCopy(t);   // carries details + links forward
+        t.childId = child.id;
+      }
+    }
+  }
+  if(changed) save();
+}
+function minOrder(){
+  const os = state.tasks.filter(t=>t.status==='todo').map(t=>t.order);
+  return os.length ? Math.min(...os) : 0;
+}
+
+/* Spawn a fresh to-do copy of a scheduled block (used by overdue sweep and week
+   rollover). New id, top priority, carrying over details, createdAt, priority
+   flag, AND links (re-registered symmetrically so partners point at the copy too).
+   Returns the new copy. */
+function spawnReturnCopy(src){
+  const child = {
+    id: uid(), title: src.title, allDay: src.allDay,
+    status:'todo', checked:false, spent:false,
+    order: minOrder() - 1,
+    createdAt: src.createdAt,
+    priorityManual: src.priorityManual,
+    details: src.details ? {...src.details} : undefined,
+    linkedIds: []
+  };
+  state.tasks.push(child);
+  // carry links forward: link the copy to everything the source is linked to
+  if(linksOf(src).length){ setLinks(child.id, [...linksOf(src)]); }
+  return child;
+}
+
+/* ---------- Week rollover ----------
+   Runs on load and periodically. When the real week advances past the last
+   recorded week:
+     1. Unchecked blocks from any prior week return to the to-do list (top).
+     2. The completed list is cleared.
+   Separately, prior-week block records are purged after end of Tuesday of the
+   current week (an export grace period). The calendar only ever shows the
+   current week regardless.
+*/
+function rolloverWeeks(){
+  const nowKey = currentWeekKey();
+  let changed = false;
+
+  // First run ever: just record the week, nothing to roll over.
+  if(!state.lastWeekKey){ state.lastWeekKey = nowKey; save(); }
+
+  if(state.lastWeekKey !== nowKey){
+    // --- week advanced ---
+    // 1. unchecked prior-week blocks -> back to to-do list (top), once each
+    for(const t of state.tasks){
+      if(t.status==='scheduled' && t.weekKey && t.weekKey!==nowKey && !t.checked && !t.returned){
+        t.returned = true;                 // guard so we only return it once
+        const child = spawnReturnCopy(t);  // carries details + links forward
+        t.childId = child.id;
+      }
+    }
+    // 2. clear everything already in the completed list
+    state.tasks = state.tasks.filter(t=>t.status!=='completed');
+    state.lastWeekKey = nowKey;
+    changed = true;
+  }
+
+  // Purge prior-week block records after end of Tuesday (grace period for export).
+  const now = new Date();
+  const monday = mondayOf(now);
+  const endOfTuesday = new Date(monday); endOfTuesday.setDate(monday.getDate()+2); // Wed 00:00
+  if(now >= endOfTuesday){
+    // ids of the prior-week blocks about to be dropped
+    const purgedIds = new Set(
+      state.tasks.filter(t=>t.status==='scheduled' && t.weekKey && t.weekKey!==nowKey).map(t=>t.id)
+    );
+    if(purgedIds.size){
+      // drop the old blocks (their return copies, with links carried forward, survive)
+      state.tasks = state.tasks.filter(t=>!purgedIds.has(t.id));
+      // strip any surviving links that pointed at a purged block, so none dangle
+      state.tasks.forEach(t=>{
+        if(t.linkedIds) t.linkedIds = t.linkedIds.filter(l=>!purgedIds.has(l));
+      });
+      changed = true;
+    }
+  }
+
+  if(changed) save();
+}
+
+/* ---------- Completion ---------- */
+function completeTask(t){
+  // checking anywhere: remove the associated todo instance, keep calendar block
+  t.checked = true;
+  ensureDetails(t);
+  t.details.completionDate = toLocalDatetime(new Date());   // auto-stamp completion
+  if(t.status === 'scheduled'){
+    // if this block spawned a child todo (missed then re-listed), remove that child
+    if(t.childId){
+      const c = state.tasks.find(x=>x.id===t.childId);
+      if(c && c.status==='todo'){ removeTask(c.id); }
+      t.childId = null;
+    }
+  }
+  if(t.status === 'todo'){
+    // an unscheduled todo that gets checked -> completed list
+    t.status = 'completed';
+  }
+  ensureCompletedShadow(t);
+  save(); render();
+}
+function uncheckTask(t){
+  t.checked = false;
+  ensureDetails(t);
+  t.details.completionDate = '';   // clears on uncheck; re-stamps if completed again
+  // remove any completed shadow
+  state.tasks = state.tasks.filter(x=>!(x.shadowOf===t.id));
+  if(t.status==='completed') t.status='todo';
+  save(); render();
+}
+// A checked, scheduled block should ALSO appear in the Completed list.
+// We represent that with a lightweight shadow entry.
+function ensureCompletedShadow(t){
+  if(t.status==='scheduled' && t.checked){
+    if(!state.tasks.some(x=>x.shadowOf===t.id)){
+      state.tasks.push({ id: uid(), title:t.title, shadowOf:t.id, status:'completed', checked:true });
+    }
+  }
+}
+function removeTask(id){
+  const t = state.tasks.find(x=>x.id===id);
+  if(!t) return;
+  const childId = t.childId;   // a spent block may have spawned a return copy
+  state.tasks = state.tasks.filter(x=>x.id!==id && x.shadowOf!==id);
+  // clear any links pointing at the deleted task so no dangling references remain
+  state.tasks.forEach(x=>{ if(x.linkedIds) x.linkedIds = x.linkedIds.filter(l=>l!==id); });
+  if(childId){
+    const c = state.tasks.find(x=>x.id===childId);
+    if(c && c.status==='todo') removeTask(c.id);   // remove the orphaned to-do copy too
+  }
+}
+
+/* ---------- Related tiles (symmetric peer links) ---------- */
+function linksOf(t){ return (t && t.linkedIds) ? t.linkedIds : []; }
+// Set a task's links to exactly `ids`, keeping the relationship symmetric on both sides.
+function setLinks(id, ids){
+  const t = state.tasks.find(x=>x.id===id);
+  if(!t) return;
+  const clean = [...new Set(ids.filter(x=>x && x!==id && state.tasks.some(k=>k.id===x)))];
+  const prev = linksOf(t);
+  t.linkedIds = clean;
+  // add this id to every newly-linked partner
+  clean.forEach(pid=>{
+    const p = state.tasks.find(x=>x.id===pid);
+    if(p){ p.linkedIds = [...new Set([...(p.linkedIds||[]), id])]; }
+  });
+  // remove this id from partners no longer linked
+  prev.filter(pid=>!clean.includes(pid)).forEach(pid=>{
+    const p = state.tasks.find(x=>x.id===pid);
+    if(p && p.linkedIds){ p.linkedIds = p.linkedIds.filter(l=>l!==id); }
+  });
+}
+// A short label for a task, used in the related-tiles picker and chips.
+function taskLabel(t){
+  const where = t.status==='scheduled' ? 'calendar' : (t.status==='completed'?'done':'to-do');
+  return (t.title||'Untitled') + ' · ' + where;
+}
+// Tasks eligible to link to (exclude self, shadow entries, and this item's own child copy).
+function linkableTasks(selfId){
+  const self = state.tasks.find(x=>x.id===selfId);
+  return state.tasks.filter(t=>
+    t.id!==selfId &&
+    !t.shadowOf &&                          // skip completed-list shadow entries
+    !(self && t.id===self.childId)          // skip this item's rescheduled copy
+  );
+}
+
+/* ---------- Rendering ---------- */
+const grid = document.getElementById('grid');
+const todoListEl = document.getElementById('todoList');
+const doneListEl = document.getElementById('doneList');
+
+function render(){
+  renderTodo();
+  renderDone();
+  renderCalendar();
+  document.getElementById('todoCount').textContent = todos().length || "";
+  document.getElementById('doneCount').textContent = dones().length || "";
+}
+function todos(){
+  return state.tasks.filter(t=>t.status==='todo').sort((a,b)=>a.order-b.order);
+}
+function dones(){
+  return state.tasks.filter(t=>t.status==='completed');
+}
+function scheduled(){
+  return state.tasks.filter(t=>t.status==='scheduled');
+}
+
+function renderTodo(){
+  const items = todos();
+  todoListEl.innerHTML = "";
+  if(!items.length){
+    todoListEl.innerHTML = '<div class="empty">Nothing queued. Add a task above.</div>';
+  }
+  items.forEach((t,i)=>{
+    const el = document.createElement('div');
+    el.className = 'task' + (t.allDay?' allday':'');
+    el.dataset.id = t.id;
+    const nLinks = linksOf(t).length;
+    const metaBits = [ t.allDay?'all-day':'', nLinks?`<span class="link-badge" title="${nLinks} related">🔗 ${nLinks}</span>`:'' ].filter(Boolean).join(' · ');
+    el.innerHTML = `
+      <input type="checkbox" class="cb" title="Mark complete">
+      <div class="body">
+        <div class="title"></div>
+        <div class="meta">${metaBits}</div>
+      </div>
+      <span class="prio">${String(i+1).padStart(2,'0')}</span>
+      <button class="expand" title="Open details">⤢</button>
+      <button class="del" title="Delete">×</button>`;
+    el.querySelector('.title').textContent = t.title;
+    el.querySelector('.cb').addEventListener('change', ()=>completeTask(t));
+    el.querySelector('.expand').addEventListener('click', (e)=>{ e.stopPropagation(); openDetail(t.id); });
+    el.querySelector('.del').addEventListener('click', ()=>{ removeTask(t.id); save(); render(); });
+    todoListEl.appendChild(el);
+  });
+}
+
+function renderDone(){
+  const items = dones();
+  doneListEl.innerHTML = "";
+  if(!items.length){
+    doneListEl.innerHTML = '<div class="empty">Completed tasks land here.</div>';
+    return;
+  }
+  items.forEach(t=>{
+    const el = document.createElement('div');
+    el.className = 'task';
+    const underlying = t.shadowOf ? (state.tasks.find(x=>x.id===t.shadowOf)||t) : t;
+    const nLinks = linksOf(underlying).length;
+    el.innerHTML = `
+      <input type="checkbox" class="cb" checked title="Uncheck">
+      <div class="body"><div class="title"></div>${nLinks?`<div class="meta"><span class="link-badge">🔗 ${nLinks}</span></div>`:''}</div>
+      <button class="expand" title="Open details">⤢</button>`;
+    el.querySelector('.title').textContent = t.title;
+    el.querySelector('.cb').addEventListener('change', ()=>{
+      // unchecking a shadow reopens its parent; unchecking a real completed reopens it
+      const parent = t.shadowOf ? state.tasks.find(x=>x.id===t.shadowOf) : t;
+      if(parent) uncheckTask(parent);
+    });
+    el.querySelector('.expand').addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const target = t.shadowOf ? (state.tasks.find(x=>x.id===t.shadowOf)||t) : t;
+      openDetail(target.id);
+    });
+    doneListEl.appendChild(el);
+  });
+}
+
+function renderCalendar(){
+  const dates = weekDates();
+  const todayStr = new Date().toDateString();
+  grid.innerHTML = "";
+
+  // header row
+  grid.appendChild(cell('corner'));
+  const dows = ['Mon','Tue','Wed','Thu','Fri'];
+  dates.forEach((d,i)=>{
+    const isToday = d.toDateString()===todayStr;
+    const h = cell('col-head'+(isToday?' today':''));
+    h.innerHTML = `<div class="dow">${dows[i]}</div><div class="date">${d.getDate()}</div>`;
+    grid.appendChild(h);
+  });
+
+  // time column
+  const tc = cell('time-col');
+  for(let hr=DAY_START; hr<DAY_END; hr++){
+    const hl = document.createElement('div');
+    hl.className='hour-label';
+    let hh=hr%12; if(hh===0) hh=12;
+    hl.innerHTML = `<span>${hh}${hr<12?'am':'pm'}</span>`;
+    tc.appendChild(hl);
+  }
+  grid.appendChild(tc);
+
+  // day columns
+  dates.forEach((d,dayIndex)=>{
+    const isToday = d.toDateString()===todayStr;
+    const col = cell('day-col'+(isToday?' today':''));
+    col.dataset.day = dayIndex;
+    for(let s=0;s<TOTAL_SLOTS;s++){
+      const slot = document.createElement('div');
+      slot.className = 'slot' + (s%SLOTS_PER_HOUR===0?' hour-line':'');
+      slot.dataset.slot = s;
+      col.appendChild(slot);
+    }
+    // blocks — only the current week is ever shown
+    scheduled().filter(t=>t.dayIndex===dayIndex && t.weekKey===currentWeekKey()).forEach(t=>{
+      col.appendChild(makeBlock(t));
+    });
+    attachDrop(col, dayIndex);
+    grid.appendChild(col);
+  });
+
+  document.getElementById('weekRange').textContent =
+    dates[0].toLocaleDateString(undefined,{month:'long',day:'numeric'}) + " – " +
+    dates[4].toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'});
+}
+
+function makeBlock(t){
+  const b = document.createElement('div');
+  b.className='block'+(t.allDay?' allday':'')+(t.spent?' spent':'')+(t.checked?' checked':'');
+  b.style.top = (t.startSlot*SLOT_PX)+'px';
+  b.style.height = (t.lenSlots*SLOT_PX - 2)+'px';
+  b.dataset.id = t.id;
+  b.innerHTML = `
+    <div class="b-top">
+      <input type="checkbox" class="cb" ${t.checked?'checked':''} title="Complete">
+      <div>
+        <div class="b-title"></div>
+        <div class="b-time">${fmtTime(t.startSlot)}–${fmtTime(t.startSlot+t.lenSlots)}${linksOf(t).length?` <span class="link-badge">🔗 ${linksOf(t).length}</span>`:''}</div>
+      </div>
+      <button class="expand b-exp" title="Open details">⤢</button>
+      <button class="b-del" title="Delete from calendar">×</button>
+    </div>
+    <div class="resize"></div>`;
+  b.querySelector('.b-title').textContent = t.title;
+  b.querySelector('.cb').addEventListener('change', (e)=>{
+    if(e.target.checked) completeTask(t); else uncheckTask(t);
+  });
+  const exp = b.querySelector('.b-exp');
+  exp.addEventListener('pointerdown', e=>e.stopPropagation());
+  exp.addEventListener('click', (e)=>{ e.stopPropagation(); openDetail(t.id); });
+  const del = b.querySelector('.b-del');
+  del.addEventListener('pointerdown', e=>e.stopPropagation());  // don't start a drag
+  del.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    removeTask(t.id);
+    save(); render();
+  });
+  enableBlockDrag(b, t);          // spent blocks are draggable too, to reschedule
+  if(!t.spent){
+    enableResize(b, t);           // only live blocks can be resized
+  }
+  return b;
+}
+
+function cell(cls){ const d=document.createElement('div'); d.className=cls; return d; }
+
+/* ---------- Drop from to-do list onto a day column ---------- */
+let dragTaskId = null;   // id currently being dragged from the list
+
+function attachDrop(col, dayIndex){
+  col.addEventListener('dragover', (e)=>{
+    if(!dragTaskId) return;
+    e.preventDefault();
+    const slot = slotFromEvent(col, e);
+    highlightSlots(col, slot, dragLen(), placementOK(dayIndex, slot, dragLen(), dragAllDay(), dragTaskId));
+  });
+  col.addEventListener('dragleave', ()=>clearHighlight(col));
+  col.addEventListener('drop', (e)=>{
+    if(!dragTaskId) return;
+    e.preventDefault();
+    const slot = slotFromEvent(col, e);
+    const len = dragLen();
+    if(placementOK(dayIndex, slot, len, dragAllDay(), dragTaskId)){
+      placeTask(dragTaskId, dayIndex, slot, len);
+    }
+    clearHighlight(col);
+    dragTaskId = null;
+  });
+}
+function dragLen(){
+  const t = state.tasks.find(x=>x.id===dragTaskId);
+  if(!t) return 2;
+  if(t.allDay) return TOTAL_SLOTS;              // all-day fills the day
+  if(t.status==='scheduled') return t.lenSlots; // repositioning keeps its own length
+  return 2;                                     // new drops default to 30 min
+}
+function dragAllDay(){
+  const t = state.tasks.find(x=>x.id===dragTaskId);
+  return !!(t && t.allDay);
+}
+function slotFromEvent(col, e){
+  const rect = col.getBoundingClientRect();
+  let s = Math.floor((e.clientY - rect.top)/SLOT_PX);
+  return Math.max(0, Math.min(TOTAL_SLOTS-1, s));
+}
+function highlightSlots(col, start, len, ok){
+  clearHighlight(col);
+  const slots = col.querySelectorAll('.slot');
+  for(let i=start;i<Math.min(start+len,TOTAL_SLOTS);i++){
+    slots[i].classList.add(ok?'drop-ok':'drop-bad');
+  }
+}
+function clearHighlight(col){
+  col.querySelectorAll('.slot').forEach(s=>s.classList.remove('drop-ok','drop-bad'));
+}
+
+/* Collision rule: normal items cannot overlap other NORMAL items.
+   All-day (background) items may overlap freely and don't block others.
+   `ignoreId` excludes the block currently being repositioned from its own check. */
+function placementOK(dayIndex, start, len, isAllDay, ignoreId){
+  if(start+len > TOTAL_SLOTS) return false;
+  if(isAllDay) return true;
+  const clash = scheduled().some(t=>{
+    if(t.id===ignoreId) return false;     // don't collide with self when moving
+    if(t.weekKey !== currentWeekKey()) return false;  // only current-week blocks collide
+    if(t.dayIndex!==dayIndex) return false;
+    if(t.allDay) return false;            // background items don't block
+    const a0=t.startSlot, a1=t.startSlot+t.lenSlots;
+    return start < a1 && (start+len) > a0;
+  });
+  return !clash;
+}
+
+function placeTask(id, dayIndex, slot, len){
+  const t = state.tasks.find(x=>x.id===id);
+  if(!t) return;
+  const wasSpent = t.spent;
+  // Rescheduling a missed (spent) block: keep its own duration, drop the returned copy.
+  if(wasSpent){
+    len = t.lenSlots;                       // preserve the block's existing length
+    if(t.childId){
+      const child = state.tasks.find(x=>x.id===t.childId);
+      if(child && child.status==='todo') removeTask(child.id);   // remove orphan from to-do
+      t.childId = null;
+    }
+  }
+  t.status='scheduled';
+  t.dayIndex=dayIndex; t.startSlot=slot; t.lenSlots=len;
+  t.spent=false; t.checked=false;
+  t.weekKey=currentWeekKey();   // pin block to the week it was placed in
+  // autopopulate priority from scheduling latency (unless user overrode it)
+  ensureDetails(t);
+  if(!t.priorityManual){
+    const schedDate = slotToDate(dayIndex, slot, t.weekKey);
+    t.details.priority = priorityFromLatency(t.createdAt, schedDate);
+  }
+  save();
+  sweepOverdue();   // detect immediately if this slot is already in the past
+  render();
+}
+
+/* ---------- Move an existing block (re-drag / reschedule) ---------- */
+function enableBlockDrag(b, t){
+  b.setAttribute('draggable','true');
+  b.addEventListener('dragstart', (e)=>{
+    // never start a reposition from the checkbox, resize handle, or delete button
+    if(b.dataset.resizing==='1' || e.target.classList.contains('resize') || e.target.classList.contains('cb') || e.target.classList.contains('b-del') || e.target.classList.contains('b-exp')){
+      e.preventDefault(); return;
+    }
+    dragTaskId = t.id;
+    b.classList.add('drag-ghost');
+  });
+  b.addEventListener('dragend', ()=>{ b.classList.remove('drag-ghost'); dragTaskId=null; });
+}
+
+/* ---------- Resize (bottom edge, live 15-min snap, Pointer Events) ---------- */
+function enableResize(b, t){
+  const handle = b.querySelector('.resize');
+  handle.addEventListener('pointerdown', (e)=>{
+    e.preventDefault(); e.stopPropagation();
+    b.dataset.resizing = '1';
+    b.setAttribute('draggable','false');   // stop native drag from stealing the gesture
+    handle.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const startLen = t.lenSlots;
+
+    const move = (ev)=>{
+      const delta = Math.round((ev.clientY - startY)/SLOT_PX);   // live snap to 15-min rows
+      let newLen = Math.max(1, startLen + delta);
+      newLen = Math.min(newLen, TOTAL_SLOTS - t.startSlot);      // can't run off the day
+      // shrinking is always allowed; growing must not collide (all-day never collides)
+      const growingOk = t.allDay || placementOK(t.dayIndex, t.startSlot, newLen, false, t.id);
+      if(newLen !== t.lenSlots && (newLen < t.lenSlots || growingOk)){
+        t.lenSlots = newLen;
+        b.style.height = (newLen*SLOT_PX - 2)+'px';
+        b.querySelector('.b-time').textContent = `${fmtTime(t.startSlot)}–${fmtTime(t.startSlot+newLen)}`;
+      }
+    };
+    const up = (ev)=>{
+      handle.releasePointerCapture(e.pointerId);
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      b.setAttribute('draggable','true');
+      // clear the guard on the next tick so the trailing dragstart (if any) is still suppressed
+      setTimeout(()=>{ b.dataset.resizing='0'; }, 0);
+      save();
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+  });
+}
+
+/* ---------- Add task ---------- */
+function addTask(){
+  const input = document.getElementById('newTask');
+  const title = input.value.trim();
+  if(!title) return;
+  state.tasks.push({
+    id: uid(), title, allDay: document.getElementById('allDayFlag').checked,
+    status:'todo', checked:false, spent:false,
+    order: (todos().length? Math.max(...todos().map(t=>t.order))+1 : 0),
+    createdAt: Date.now(),
+    details: { keyInitiative:'', description:'', priority:'Low', project:'', deliverable:'', link:'', completionDate:'' }
+  });
+  input.value=''; document.getElementById('allDayFlag').checked=false;
+  save(); render(); input.focus();
+}
+document.getElementById('addBtn').addEventListener('click', addTask);
+document.getElementById('newTask').addEventListener('keydown', e=>{ if(e.key==='Enter') addTask(); });
+
+/* ---------- Drag from list: set dragTaskId via SortableJS + native ---------- */
+new Sortable(todoListEl, {
+  animation:150,
+  ghostClass:'drag-ghost',
+  onStart: (evt)=>{ dragTaskId = evt.item.dataset.id; },
+  onEnd: (evt)=>{
+    // reorder priorities
+    const ids = [...todoListEl.querySelectorAll('.task')].map(el=>el.dataset.id);
+    ids.forEach((id,i)=>{ const t=state.tasks.find(x=>x.id===id); if(t) t.order=i; });
+    dragTaskId = null;
+    save(); render();
+  }
+});
+// Native dragstart on list items so they can drop onto the calendar
+todoListEl.addEventListener('dragstart', (e)=>{
+  const task = e.target.closest('.task');
+  if(task) dragTaskId = task.dataset.id;
+});
+
+/* ---------- CSV export / import (merge, dedup by id) ---------- */
+function toCSV(){
+  const cols = ['id','title','allDay','status','dayIndex','startSlot','lenSlots','checked','spent','childId','shadowOf','order','weekKey','returned','createdAt','priorityManual','linkedIds','details'];
+  const esc = v => {
+    if(v===undefined||v===null) return '';
+    const s = (typeof v==='object') ? JSON.stringify(v) : String(v);
+    return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  };
+  const rows = [cols.join(',')];
+  state.tasks.forEach(t=> rows.push(cols.map(c=>esc(t[c])).join(',')));
+  return rows.join('\n');
+}
+function exportCSV(){
+  const blob = new Blob([toCSV()], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cadence-backup-'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+/* ---------- Export Weekly Summary ----------
+   Maps tasks to the fixed Weekly_Progress_Summary column layout.
+   Window: exported Wed/Thu/Fri -> current week-to-date; Mon/Tue -> prior week. */
+function weeklySummaryWeekKey(){
+  const now = new Date();
+  const dow = now.getDay();              // 0 Sun .. 6 Sat
+  // Mon(1) or Tue(2): report on the PRIOR week; otherwise the current week.
+  if(dow===1 || dow===2){
+    const priorMon = mondayOf(now); priorMon.setDate(priorMon.getDate()-7);
+    return weekKey(priorMon);
+  }
+  return currentWeekKey();
+}
+// the calendar date (yyyy-mm-dd) a scheduled task sits on, else ''
+function taskCalendarDate(t){
+  if(t.status==='scheduled' && t.weekKey!=null && t.dayIndex!=null){
+    const d = slotToDate(t.dayIndex, t.startSlot||0, t.weekKey);
+    const p=n=>String(n).padStart(2,'0');
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+  }
+  return '';
+}
+// most recently linked task (last valid id in linkedIds), resolved to a task, else null
+function mostRecentlyLinked(t){
+  const ids = linksOf(t);
+  for(let i=ids.length-1;i>=0;i--){
+    const p = state.tasks.find(x=>x.id===ids[i]);
+    if(p) return p;
+  }
+  return null;
+}
+function exportWeeklySummary(){
+  const wk = weeklySummaryWeekKey();
+  const esc = v => {
+    if(v===undefined||v===null) return '';
+    const s = String(v);
+    return /[",\r\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  };
+  // Rows: to-do items (no week) + scheduled blocks for the target week, deduped by id.
+  // Skip shadow entries; the underlying scheduled block already represents completion.
+  const seen = new Set();
+  const rows = [];
+  state.tasks.forEach(t=>{
+    if(t.shadowOf) return;
+    const include = t.status==='todo'
+      || (t.status==='scheduled' && t.weekKey===wk)
+      || (t.status==='completed' && !t.shadowOf);   // stand-alone completed to-dos
+    if(!include || seen.has(t.id)) return;
+    seen.add(t.id);
+    rows.push(t);
+  });
+
+  const d = t => ensureDetails(t);
+  const isDone = t => !!t.checked || t.status==='completed';
+
+  // completed first, by completion date ascending; then incomplete (stable)
+  const done = rows.filter(isDone).sort((a,b)=>{
+    const ca=d(a).completionDate||'', cb=d(b).completionDate||'';
+    return ca<cb ? -1 : ca>cb ? 1 : 0;
+  });
+  const open = rows.filter(t=>!isDone(t));
+  const ordered = [...done, ...open];
+
+  const header = ['Owner','Key Initiative','Priority','Project','Deliverable',
+    'Link to Deliverable if Applicable','Description','Completion Date',
+    'Next Step','Deliverable','Target Date'];
+  const lines = [header.map(esc).join(',')];
+
+  ordered.forEach(t=>{
+    const dt = d(t);
+    const linked = mostRecentlyLinked(t);
+    const ld = linked ? ensureDetails(linked) : null;
+    const row = [
+      'Stone',                                   // Owner (always)
+      dt.keyInitiative||'',                       // Key Initiative
+      dt.priority||'',                            // Priority
+      dt.project||'',                             // Project
+      dt.deliverable||'',                         // Deliverable (own)
+      dt.link||'',                                // Link to Deliverable if Applicable
+      dt.description||'',                         // Description
+      dt.completionDate||'',                      // Completion Date
+      ld ? (ld.project||'') : '',                 // Next Step = linked task's Project
+      ld ? (ld.deliverable||'') : '',             // Deliverable = linked task's Deliverable
+      linked ? taskCalendarDate(linked) : ''      // Target Date = linked task's calendar date
+    ];
+    lines.push(row.map(esc).join(','));
+  });
+
+  const blob = new Blob([lines.join('\r\n')+'\r\n'], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'Weekly_Progress_Summary_'+wk+'.csv';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+function parseCSV(text){
+  const rows=[]; let row=[], cur='', q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){
+      if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; }
+      else cur+=ch;
+    }else{
+      if(ch==='"') q=true;
+      else if(ch===','){ row.push(cur); cur=''; }
+      else if(ch==='\n'||ch==='\r'){ if(ch==='\r'&&text[i+1]==='\n')i++; row.push(cur); rows.push(row); row=[]; cur=''; }
+      else cur+=ch;
+    }
+  }
+  if(cur!==''||row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r=>r.length>1||r[0]!=='');
+}
+function importCSV(text){
+  const rows = parseCSV(text);
+  if(!rows.length) return;
+  const header = rows[0];
+  const idx = Object.fromEntries(header.map((h,i)=>[h.trim(),i]));
+  const nums = new Set(['dayIndex','startSlot','lenSlots','order','createdAt']);
+  const bools = new Set(['allDay','checked','spent','returned','priorityManual']);
+  let added=0, updated=0;
+  for(let r=1;r<rows.length;r++){
+    const cells = rows[r];
+    if(!cells || cells.every(c=>c==='')) continue;
+    const obj={};
+    for(const key in idx){
+      let v = cells[idx[key]] ?? '';
+      if(key==='details'){ obj.details = v ? (()=>{try{return JSON.parse(v);}catch{return undefined;}})() : undefined; }
+      else if(key==='linkedIds'){ obj.linkedIds = v ? (()=>{try{const a=JSON.parse(v);return Array.isArray(a)?a:[];}catch{return [];}})() : []; }
+      else if(v==='') { obj[key] = (nums.has(key)?undefined:(bools.has(key)?false:'')); }
+      else if(nums.has(key)) obj[key]=Number(v);
+      else if(bools.has(key)) obj[key]=(v==='true'||v==='1');
+      else obj[key]=v;
+    }
+    if(!obj.id){ obj.id = uid(); }
+    const existing = state.tasks.find(t=>t.id===obj.id);
+    if(existing){ Object.assign(existing, obj); updated++; }   // dedup by id -> update
+    else { state.tasks.push(obj); added++; }
+  }
+  // keep seq ahead of any imported ids
+  save(); render();
+  alert(`Import complete — ${added} added, ${updated} updated.`);
+}
+document.getElementById('exportBtn').addEventListener('click', exportCSV);
+document.getElementById('summaryBtn').addEventListener('click', exportWeeklySummary);
+document.getElementById('importBtn').addEventListener('click', ()=>document.getElementById('importFile').click());
+document.getElementById('importFile').addEventListener('change', (e)=>{
+  const f=e.target.files[0]; if(!f) return;
+  const rd=new FileReader(); rd.onload=()=>importCSV(rd.result); rd.readAsText(f);
+  e.target.value='';
+});
+
+/* ---------- Detail modal ---------- */
+let openDetailId = null;
+let autosaveTimer = null;
+const scrim = document.getElementById('modalScrim');
+const F = {
+  title: document.getElementById('modalTitle'),
+  keyInitiative: document.getElementById('dKeyInitiative'),
+  description: document.getElementById('dDescription'),
+  priority: document.getElementById('dPriority'),
+  project: document.getElementById('dProject'),
+  deliverable: document.getElementById('dDeliverable'),
+  link: document.getElementById('dLink'),
+  completion: document.getElementById('dCompletion'),
+};
+
+function openDetail(id){
+  const t = state.tasks.find(x=>x.id===id);
+  if(!t) return;
+  openDetailId = id;
+  const d = ensureDetails(t);
+
+  F.title.value = t.title || '';
+  F.keyInitiative.value = d.keyInitiative || '';
+  F.description.value = d.description || '';
+  F.priority.value = d.priority || 'Low';
+  F.project.value = d.project || '';
+  F.deliverable.value = d.deliverable || '';
+  F.link.value = d.link || '';
+  F.completion.value = d.completionDate || '';
+
+  // populate autocomplete list of past Key Initiatives
+  const dl = document.getElementById('initiativeList');
+  dl.innerHTML = pastInitiatives().map(v=>`<option value="${v.replace(/"/g,'&quot;')}"></option>`).join('');
+
+  // priority hint reflects whether it's still auto or user-set
+  document.getElementById('priorityHint').textContent =
+    t.priorityManual ? 'Set manually.' : 'Auto from scheduling; change to override.';
+
+  const ctx = t.status==='scheduled' ? 'On calendar' : (t.status==='completed'?'Completed':'To-do');
+  document.getElementById('modalContext').textContent = ctx;
+  document.getElementById('saveState').textContent = '';
+
+  renderLinks(id);
+
+  scrim.hidden = false;
+  F.title.focus();
+}
+
+// Render the related-tile chips and repopulate the link picker for task `id`.
+function renderLinks(id){
+  const t = state.tasks.find(x=>x.id===id);
+  if(!t) return;
+  const chipWrap = document.getElementById('linkChips');
+  const picker = document.getElementById('linkPicker');
+  const linked = linksOf(t);
+
+  // chips for currently-linked tiles (click chip body to jump to it; × to unlink)
+  chipWrap.innerHTML = '';
+  linked.forEach(pid=>{
+    const p = state.tasks.find(x=>x.id===pid);
+    if(!p) return;
+    const chip = document.createElement('span');
+    chip.className='chip';
+    chip.innerHTML = `<span class="chip-txt"></span><button class="chip-x" title="Unlink">×</button>`;
+    chip.querySelector('.chip-txt').textContent = taskLabel(p);
+    chip.querySelector('.chip-txt').addEventListener('click', ()=>{
+      commitDetail(false);          // save current edits before navigating
+      openDetail(pid);              // jump to the linked tile
+    });
+    chip.querySelector('.chip-x').addEventListener('click', (e)=>{
+      e.stopPropagation();
+      setLinks(id, linked.filter(l=>l!==pid));
+      save(); render(); renderLinks(id);
+    });
+    chipWrap.appendChild(chip);
+  });
+
+  // picker lists everything linkable that isn't already linked
+  picker.innerHTML = '<option value="">+ Link a related tile…</option>';
+  linkableTasks(id)
+    .filter(o=>!linked.includes(o.id))
+    .forEach(o=>{
+      const opt=document.createElement('option');
+      opt.value=o.id; opt.textContent=taskLabel(o);
+      picker.appendChild(opt);
+    });
+}
+document.getElementById('linkPicker').addEventListener('change', (e)=>{
+  const pid = e.target.value;
+  if(!pid || !openDetailId) return;
+  setLinks(openDetailId, [...linksOf(state.tasks.find(x=>x.id===openDetailId)), pid]);
+  save(); render(); renderLinks(openDetailId);
+  e.target.value = '';   // reset picker back to placeholder
+});
+
+function readIntoTask(){
+  if(!openDetailId) return null;
+  const t = state.tasks.find(x=>x.id===openDetailId);
+  if(!t) return null;
+  const d = ensureDetails(t);
+  const newTitle = F.title.value.trim();
+  if(newTitle){
+    t.title = newTitle;
+    if(t.childId){ const c=state.tasks.find(x=>x.id===t.childId); if(c) c.title=newTitle; }
+  }
+  d.keyInitiative = F.keyInitiative.value;
+  d.description   = F.description.value;
+  if(d.priority !== F.priority.value){ d.priority = F.priority.value; t.priorityManual = true; }
+  d.project       = F.project.value;
+  d.deliverable   = F.deliverable.value;
+  d.link          = F.link.value;
+  d.completionDate= F.completion.value;
+  return t;
+}
+
+function commitDetail(showState){
+  const t = readIntoTask();
+  if(!t) return;
+  save(); render();
+  if(showState){
+    const el=document.getElementById('saveState');
+    el.textContent='Saved '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  }
+}
+
+// 60s debounce: every edit resets the timer
+function scheduleAutosave(){
+  document.getElementById('saveState').textContent='Editing…';
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(()=>commitDetail(true), 60000);
+}
+Object.values(F).forEach(el=>{
+  el.addEventListener('input', scheduleAutosave);
+  if(el.tagName==='SELECT') el.addEventListener('change', scheduleAutosave);
+});
+
+function closeDetail(){
+  clearTimeout(autosaveTimer);
+  commitDetail(false);   // flush on close so nothing is lost
+  scrim.hidden = true;
+  openDetailId = null;
+}
+document.getElementById('modalSave').addEventListener('click', ()=>{ clearTimeout(autosaveTimer); commitDetail(true); });
+document.getElementById('modalClose').addEventListener('click', closeDetail);
+scrim.addEventListener('click', (e)=>{ if(e.target===scrim) closeDetail(); });
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !scrim.hidden) closeDetail(); });
+
+/* ---------- Boot ---------- */
+load();
+rolloverWeeks();
+sweepOverdue();
+render();
+setInterval(()=>{
+  // don't rebuild the DOM mid-resize or mid-drag, it would interrupt the gesture
+  if(document.querySelector('.block[data-resizing="1"]') || dragTaskId) return;
+  rolloverWeeks();
+  sweepOverdue();
+  render();
+}, 2000); // re-check every 2s
+</script>
+</body>
+</html>
