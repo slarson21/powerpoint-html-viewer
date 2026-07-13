@@ -78,8 +78,9 @@
   .btn:hover{border-color:var(--ink-soft)}
   .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
   .btn-primary:hover{background:var(--accent-deep);border-color:var(--accent-deep)}
-  .allday-toggle{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-soft);margin-top:8px}
-  .allday-toggle input{width:15px;height:15px;accent-color:var(--sage)}
+  .add-toggles{display:flex;flex-direction:column;gap:6px;margin-top:9px}
+  .allday-toggle{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-soft);line-height:1.3}
+  .allday-toggle input{width:15px;height:15px;accent-color:var(--sage);flex:none}
 
   .section-label{
     font-family:"SF Mono",ui-monospace,Menlo,monospace;
@@ -157,6 +158,9 @@
   .btn-summary{width:100%;margin-top:8px;font-size:12.5px;padding:9px;
     background:var(--sage);border-color:var(--sage);color:#fff}
   .btn-summary:hover{background:#4a6b56;border-color:#4a6b56}
+  .summary-toggle{display:flex;align-items:center;gap:7px;font-size:11.5px;
+    color:var(--ink-soft);line-height:1.3;margin-top:10px}
+  .summary-toggle input{width:15px;height:15px;accent-color:var(--sage);flex:none}
 
   /* ---------- Calendar ---------- */
   main{overflow:auto;padding:22px 24px}
@@ -303,7 +307,14 @@
     font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;white-space:nowrap}
   .series-badge{display:inline-flex;align-items:center;gap:2px;color:var(--accent-deep);
     font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;white-space:nowrap;margin-right:4px}
+  .event-badge{display:inline-flex;align-items:center;gap:2px;color:#6b6f8f;
+    font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;white-space:nowrap;margin-right:4px}
   .block.series{border-left-style:double;border-left-width:4px}
+  .block.event{border-left-color:#6b6f8f;background:#f4f4f8}
+  .task.event{border-left-color:#6b6f8f}
+  .cb-spacer{width:16px;flex:none}
+  /* title-only modal for calendar events */
+  .modal.event-only .modal-body{display:none}
 
   /* right-click context menu */
   .ctx-menu{
@@ -336,7 +347,10 @@
         <input type="text" id="newTask" placeholder="What needs doing?" autocomplete="off">
         <button class="btn btn-primary" id="addBtn">Add</button>
       </div>
-      <label class="allday-toggle"><input type="checkbox" id="allDayFlag"> Background / all-day event (can overlap)</label>
+      <div class="add-toggles">
+        <label class="allday-toggle"><input type="checkbox" id="allDayFlag"> Background / all-day event (can overlap)</label>
+        <label class="allday-toggle"><input type="checkbox" id="calEventFlag"> Calendar event (no task, no checkbox)</label>
+      </div>
     </div>
 
     <div class="list-section todo-section">
@@ -359,6 +373,7 @@
       <button class="btn" id="importBtn">Import Backup File</button>
       <input type="file" id="importFile" accept=".csv" hidden>
     </div>
+    <label class="summary-toggle"><input type="checkbox" id="includeEventsFlag"> Add calendar events to weekly summary</label>
     <button class="btn btn-summary" id="summaryBtn">Export Weekly Summary</button>
   </aside>
 
@@ -372,6 +387,7 @@
       <div class="legend">
         <span><i class="sw" style="background:var(--accent)"></i>Task</span>
         <span><i class="sw" style="background:var(--gold)"></i>All-day</span>
+        <span><i class="sw" style="background:#6b6f8f"></i>Calendar event</span>
         <span><i class="sw" style="background:var(--spent)"></i>Time passed</span>
       </div>
     </div>
@@ -478,7 +494,7 @@ const STORE_KEY = "cadence.v1";
      order                   // sort order within the todo list
    }
 */
-let state = { tasks: [], seq: 1, lastWeekKey: null };
+let state = { tasks: [], seq: 1, lastWeekKey: null, includeEventsInSummary: false };
 
 /* ---------- Undo history ---------- */
 const undoStack = [];
@@ -494,6 +510,7 @@ function load(){
   if(!state.tasks) state.tasks = [];
   if(!state.seq) state.seq = 1;
   if(state.lastWeekKey===undefined) state.lastWeekKey = null;
+  if(state.includeEventsInSummary===undefined) state.includeEventsInSummary = false;
   // stamp any pre-existing scheduled blocks (from before week-tracking) with the current week
   state.tasks.forEach(t=>{ if(t.status==='scheduled' && !t.weekKey) t.weekKey = currentWeekKey(); });
   prevSerialized = JSON.stringify(state);
@@ -531,6 +548,9 @@ function uid(){ return "t" + (state.seq++) + "-" + Date.now().toString(36); }
 
 /* ---------- Detail helpers ---------- */
 const DETAIL_DEFAULTS = { keyInitiative:'', description:'', priority:'Low', project:'', deliverable:'', link:'', completionDate:'' };
+// When the "add calendar events to weekly summary" toggle is on, events gain
+// task features (detail fields, summary inclusion) — everything except a checkbox.
+function eventsAreTasky(){ return !!state.includeEventsInSummary; }
 function ensureDetails(t){
   if(!t.details) t.details = {...DETAIL_DEFAULTS};
   else for(const k in DETAIL_DEFAULTS){ if(t.details[k]===undefined) t.details[k]=DETAIL_DEFAULTS[k]; }
@@ -540,6 +560,10 @@ function ensureDetails(t){
 function toLocalDatetime(d){
   const p = n=>String(n).padStart(2,'0');
   return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());
+}
+// datetime-local string for a specific slot in a given week (used for event end times)
+function slotToLocalDatetime(dayIndex, slot, wk){
+  return toLocalDatetime(slotToDate(dayIndex, slot, wk));
 }
 // Priority from scheduling latency: same day High, 1-2 days Mid, 3+ days Low.
 function priorityFromLatency(createdAt, scheduledDate){
@@ -611,7 +635,7 @@ function sweepOverdue(){
     const end = slotToDate(t.dayIndex, t.startSlot + t.lenSlots, t.weekKey);
     if(now >= end){
       t.spent = true; changed = true;
-      if(!t.checked){
+      if(!t.checked && !t.isEvent){    // calendar events just grey; never return to the list
         if(t.seriesId && isSeries(t)){
           // Series: a missed occurrence is just skipped. Only spawn a return-copy
           // when the LAST instance (latest by date+time) has passed unchecked.
@@ -706,7 +730,7 @@ function rolloverWeeks(){
     // --- week advanced ---
     // 1. unchecked prior-week blocks -> back to to-do list (top), once each
     for(const t of state.tasks){
-      if(t.status==='scheduled' && t.weekKey && t.weekKey!==nowKey && !t.checked && !t.returned){
+      if(t.status==='scheduled' && t.weekKey && t.weekKey!==nowKey && !t.checked && !t.returned && !t.isEvent){
         t.returned = true;                 // guard so we only return it once
         const child = spawnReturnCopy(t);  // carries details + links forward
         t.childId = child.id;
@@ -864,12 +888,20 @@ function renderTodo(){
   }
   items.forEach((t,i)=>{
     const el = document.createElement('div');
-    el.className = 'task' + (t.allDay?' allday':'');
+    el.className = 'task' + (t.allDay?' allday':'') + (t.isEvent?' event':'');
     el.dataset.id = t.id;
     const nLinks = linksOf(t).length;
-    const metaBits = [ t.allDay?'all-day':'', nLinks?`<span class="link-badge" title="${nLinks} related">🔗 ${nLinks}</span>`:'' ].filter(Boolean).join(' · ');
+    const metaBits = [
+      t.isEvent?'calendar event':'',
+      t.allDay?'all-day':'',
+      nLinks?`<span class="link-badge" title="${nLinks} related">🔗 ${nLinks}</span>`:''
+    ].filter(Boolean).join(' · ');
+    // calendar events have no checkbox; use a spacer to keep alignment
+    const checkbox = t.isEvent
+      ? `<span class="cb-spacer"></span>`
+      : `<input type="checkbox" class="cb" title="Mark complete">`;
     el.innerHTML = `
-      <input type="checkbox" class="cb" title="Mark complete">
+      ${checkbox}
       <div class="body">
         <div class="title"></div>
         <div class="meta">${metaBits}</div>
@@ -878,7 +910,8 @@ function renderTodo(){
       <button class="expand" title="Open details">⤢</button>
       <button class="del" title="Delete">×</button>`;
     el.querySelector('.title').textContent = t.title;
-    el.querySelector('.cb').addEventListener('change', ()=>completeTask(t));
+    const cb = el.querySelector('.cb');
+    if(cb) cb.addEventListener('change', ()=>completeTask(t));
     el.querySelector('.expand').addEventListener('click', (e)=>{ e.stopPropagation(); openDetail(t.id); });
     el.querySelector('.del').addEventListener('click', ()=>{ removeTask(t.id); save(); render(); });
     todoListEl.appendChild(el);
@@ -965,6 +998,13 @@ function renderCalendar(){
       const slot = slotFromEvent(col, e);
       showPasteMenu(e.clientX, e.clientY, dayIndex, slot);
     });
+    // left-click empty space in a day column -> menu to create a calendar event here
+    col.addEventListener('click', (e)=>{
+      if(e.target.closest('.block')) return;   // clicks on a block/its controls are handled there
+      e.stopPropagation();                     // don't let the global closer dismiss the menu we're opening
+      const slot = slotFromEvent(col, e);
+      showSlotMenu(e.clientX, e.clientY, dayIndex, slot);
+    });
     grid.appendChild(col);
   });
 
@@ -975,16 +1015,19 @@ function renderCalendar(){
 
 function makeBlock(t){
   const b = document.createElement('div');
-  b.className='block'+(t.allDay?' allday':'')+(t.spent?' spent':'')+(t.checked?' checked':'')+(isSeries(t)?' series':'');
+  b.className='block'+(t.allDay?' allday':'')+(t.spent?' spent':'')+(t.checked?' checked':'')+(isSeries(t)?' series':'')+(t.isEvent?' event':'');
   b.style.top = (t.startSlot*SLOT_PX)+'px';
   b.style.height = (t.lenSlots*SLOT_PX - 2)+'px';
   b.dataset.id = t.id;
   const badges =
+    (t.isEvent?`<span class="event-badge" title="Calendar event">◇ event</span>`:'') +
     (isSeries(t)?`<span class="series-badge" title="Part of a series">⧉ series</span>`:'') +
     (linksOf(t).length?` <span class="link-badge">🔗 ${linksOf(t).length}</span>`:'');
+  // calendar events have no checkbox (they can't be completed, only pass/grey)
+  const checkbox = t.isEvent ? '' : `<input type="checkbox" class="cb" ${t.checked?'checked':''} title="Complete">`;
   b.innerHTML = `
     <div class="b-top">
-      <input type="checkbox" class="cb" ${t.checked?'checked':''} title="Complete">
+      ${checkbox}
       <div>
         <div class="b-title"></div>
         <div class="b-time">${fmtTime(t.startSlot)}–${fmtTime(t.startSlot+t.lenSlots)}${badges}</div>
@@ -994,7 +1037,8 @@ function makeBlock(t){
     </div>
     <div class="resize"></div>`;
   b.querySelector('.b-title').textContent = t.title;
-  b.querySelector('.cb').addEventListener('change', (e)=>{
+  const cb = b.querySelector('.cb');
+  if(cb) cb.addEventListener('change', (e)=>{
     if(e.target.checked) completeTask(t); else uncheckTask(t);
   });
   const exp = b.querySelector('.b-exp');
@@ -1157,7 +1201,45 @@ function showPasteMenu(x, y, dayIndex, slot){
   ]);
 }
 
-// Paste a new instance of the copied block onto the current week at (dayIndex, slot).
+// Left-click menu on empty calendar space: create a calendar event at that slot.
+function showSlotMenu(x, y, dayIndex, slot){
+  showContextMenu(x, y, [
+    { label: 'Create calendar event here', action: ()=> createEventAt(dayIndex, slot) }
+  ]);
+}
+
+// Prompt for a title and place a 30-minute calendar event at (dayIndex, slot).
+function createEventAt(dayIndex, slot){
+  const DEFAULT_LEN = 2;   // 2 slots = 30 minutes
+  let len = DEFAULT_LEN;
+  // fit within the day; shrink if near the bottom edge
+  if(slot + len > TOTAL_SLOTS) len = Math.max(1, TOTAL_SLOTS - slot);
+  if(!placementOK(dayIndex, slot, len, false)){
+    flashMenuMsg('That slot is occupied.');
+    return;
+  }
+  const title = (prompt('Event title:', '') || '').trim();
+  if(!title) return;    // cancelled or empty -> no event created
+  const ev = {
+    id: uid(),
+    title,
+    allDay: false,
+    isEvent: true,
+    status:'scheduled',
+    dayIndex, startSlot: slot, lenSlots: len,
+    weekKey: currentWeekKey(),
+    checked:false, spent:false,
+    createdAt: Date.now(),
+    priorityManual: false,
+    details: undefined,
+    linkedIds: []
+  };
+  state.tasks.push(ev);
+  save();
+  sweepOverdue();   // if the slot is already in the past, it greys immediately
+  render();
+}
+
 function pasteSeriesInstance(dayIndex, slot){
   const src = state.tasks.find(t=>t.id===seriesClipboardId);
   if(!src) return;
@@ -1292,14 +1374,18 @@ function addTask(){
   const input = document.getElementById('newTask');
   const title = input.value.trim();
   if(!title) return;
+  const isEvent = document.getElementById('calEventFlag').checked;
   state.tasks.push({
     id: uid(), title, allDay: document.getElementById('allDayFlag').checked,
+    isEvent,                                   // calendar event: no checkbox, no return-copy, greys when past
     status:'todo', checked:false, spent:false,
     order: (todos().length? Math.max(...todos().map(t=>t.order))+1 : 0),
     createdAt: Date.now(),
     details: { keyInitiative:'', description:'', priority:'Low', project:'', deliverable:'', link:'', completionDate:'' }
   });
-  input.value=''; document.getElementById('allDayFlag').checked=false;
+  input.value='';
+  document.getElementById('allDayFlag').checked=false;
+  document.getElementById('calEventFlag').checked=false;
   save(); render(); input.focus();
 }
 document.getElementById('addBtn').addEventListener('click', addTask);
@@ -1366,7 +1452,7 @@ todoListEl.addEventListener('drop', (e)=>{
 
 /* ---------- CSV export / import (merge, dedup by id) ---------- */
 function toCSV(){
-  const cols = ['id','title','allDay','status','dayIndex','startSlot','lenSlots','checked','spent','childId','shadowOf','order','weekKey','returned','createdAt','priorityManual','seriesId','completedAt','linkedIds','details'];
+  const cols = ['id','title','allDay','isEvent','status','dayIndex','startSlot','lenSlots','checked','spent','childId','shadowOf','order','weekKey','returned','createdAt','priorityManual','seriesId','completedAt','linkedIds','details'];
   const esc = v => {
     if(v===undefined||v===null) return '';
     const s = (typeof v==='object') ? JSON.stringify(v) : String(v);
@@ -1428,18 +1514,26 @@ function exportWeeklySummary(){
   const rows = [];
   state.tasks.forEach(t=>{
     if(t.shadowOf) return;
-    const include = t.status==='todo'
-      || (t.status==='scheduled' && t.weekKey===wk)
-      || (t.status==='completed' && !t.shadowOf);   // stand-alone completed to-dos
+    if(t.isEvent && !eventsAreTasky()) return;   // events excluded unless the toggle is on
+    // events only make sense as scheduled rows (they live on the calendar)
+    const include = (t.isEvent
+        ? (t.status==='scheduled' && t.weekKey===wk)
+        : ( t.status==='todo'
+            || (t.status==='scheduled' && t.weekKey===wk)
+            || (t.status==='completed' && !t.shadowOf) ));
     if(!include || seen.has(t.id)) return;
     seen.add(t.id);
     rows.push(t);
   });
 
   const d = t => ensureDetails(t);
-  const isDone = t => !!t.checked || t.status==='completed';
-  // completion timestamp: per-instance for series, shared detail otherwise
-  const completionOf = t => t.seriesId ? (t.completedAt||'') : (d(t).completionDate||'');
+  // an event's "completion" is its end time (it has no checkbox); tasks use checkbox/status
+  const eventEnd = t => (t.status==='scheduled')
+    ? slotToLocalDatetime(t.dayIndex, t.startSlot + t.lenSlots, t.weekKey) : '';
+  const isDone = t => t.isEvent ? true : (!!t.checked || t.status==='completed');
+  // completion timestamp: event end-time for events; per-instance for series; shared detail otherwise
+  const completionOf = t => t.isEvent ? eventEnd(t)
+    : (t.seriesId ? (t.completedAt||'') : (d(t).completionDate||''));
 
   // completed first, by completion date ascending; then incomplete (stable)
   const done = rows.filter(isDone).sort((a,b)=>{
@@ -1503,7 +1597,7 @@ function importCSV(text){
   const header = rows[0];
   const idx = Object.fromEntries(header.map((h,i)=>[h.trim(),i]));
   const nums = new Set(['dayIndex','startSlot','lenSlots','order','createdAt']);
-  const bools = new Set(['allDay','checked','spent','returned','priorityManual']);
+  const bools = new Set(['allDay','isEvent','checked','spent','returned','priorityManual']);
   let added=0, updated=0;
   for(let r=1;r<rows.length;r++){
     const cells = rows[r];
@@ -1529,6 +1623,10 @@ function importCSV(text){
 }
 document.getElementById('exportBtn').addEventListener('click', exportCSV);
 document.getElementById('summaryBtn').addEventListener('click', exportWeeklySummary);
+document.getElementById('includeEventsFlag').addEventListener('change', (e)=>{
+  state.includeEventsInSummary = e.target.checked;
+  save(); render();   // re-render so event tiles reflect tasky vs minimal styling if needed
+});
 document.getElementById('importBtn').addEventListener('click', ()=>document.getElementById('importFile').click());
 document.getElementById('importFile').addEventListener('change', (e)=>{
   const f=e.target.files[0]; if(!f) return;
@@ -1574,11 +1672,21 @@ function openDetail(id){
   document.getElementById('priorityHint').textContent =
     t.priorityManual ? 'Set manually.' : 'Auto from scheduling; change to override.';
 
-  const ctx = t.status==='scheduled' ? 'On calendar' : (t.status==='completed'?'Completed':'To-do');
+  const ctx = t.isEvent ? 'Calendar event'
+    : (t.status==='scheduled' ? 'On calendar' : (t.status==='completed'?'Completed':'To-do'));
   document.getElementById('modalContext').textContent = ctx;
   document.getElementById('saveState').textContent = '';
 
-  renderLinks(id);
+  // An event is title-only UNLESS the "add events to summary" toggle makes events tasky.
+  const titleOnly = t.isEvent && !eventsAreTasky();
+  document.getElementById('modalScrim').querySelector('.modal').classList.toggle('event-only', titleOnly);
+
+  // For a tasky event, Completion Date mirrors its end time (no checkbox to set it).
+  if(t.isEvent && eventsAreTasky() && t.status==='scheduled'){
+    F.completion.value = slotToLocalDatetime(t.dayIndex, t.startSlot + t.lenSlots, t.weekKey);
+  }
+
+  if(!titleOnly) renderLinks(id);
 
   scrim.hidden = false;
   F.title.focus();
@@ -1635,19 +1743,24 @@ function readIntoTask(){
   if(!openDetailId) return null;
   const t = state.tasks.find(x=>x.id===openDetailId);
   if(!t) return null;
-  const d = ensureDetails(t);
   const newTitle = F.title.value.trim();
   if(newTitle){
     t.title = newTitle;
     if(t.childId){ const c=state.tasks.find(x=>x.id===t.childId); if(c) c.title=newTitle; }
   }
+  if(t.isEvent && !eventsAreTasky()){    // title-only event: nothing else to save
+    if(t.seriesId) syncSeriesShared(t);
+    return t;
+  }
+  const d = ensureDetails(t);
   d.keyInitiative = F.keyInitiative.value;
   d.description   = F.description.value;
   if(d.priority !== F.priority.value){ d.priority = F.priority.value; t.priorityManual = true; }
   d.project       = F.project.value;
   d.deliverable   = F.deliverable.value;
   d.link          = F.link.value;
-  d.completionDate= F.completion.value;
+  // For tasky events, Completion Date is driven by end time, not this field — don't overwrite from the form.
+  if(!t.isEvent){ d.completionDate = F.completion.value; }
   if(t.seriesId) syncSeriesShared(t);   // propagate shared fields to series instances
   return t;
 }
@@ -1686,6 +1799,7 @@ document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !scrim.hidden
 
 /* ---------- Boot ---------- */
 load();
+document.getElementById('includeEventsFlag').checked = !!state.includeEventsInSummary;
 rolloverWeeks();
 sweepOverdue();
 render();
