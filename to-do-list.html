@@ -266,6 +266,22 @@
   .chip-meta{color:var(--spent);font-size:10.5px;font-family:"SF Mono",monospace}
   .link-badge{display:inline-flex;align-items:center;gap:2px;color:var(--sage);
     font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;white-space:nowrap}
+  .series-badge{display:inline-flex;align-items:center;gap:2px;color:var(--accent-deep);
+    font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;white-space:nowrap;margin-right:4px}
+  .block.series{border-left-style:double;border-left-width:4px}
+
+  /* right-click context menu */
+  .ctx-menu{
+    position:fixed;z-index:100;background:var(--panel);border:1px solid var(--line-strong);
+    border-radius:9px;box-shadow:0 12px 32px -10px rgba(20,38,31,.45);
+    padding:5px;min-width:180px;display:flex;flex-direction:column;gap:2px;
+  }
+  .ctx-item{
+    border:none;background:none;text-align:left;font:inherit;font-size:13px;color:var(--ink);
+    padding:8px 10px;border-radius:6px;cursor:pointer;
+  }
+  .ctx-item:hover{background:var(--sage-tint)}
+  .ctx-msg{font-size:12.5px;color:var(--ink-soft);padding:8px 10px}
 
   .hint{font-size:11.5px;color:var(--spent);margin-top:12px;font-style:italic}
   .drag-ghost{opacity:.4}
@@ -507,8 +523,18 @@ function sweepOverdue(){
     if(now >= end){
       t.spent = true; changed = true;
       if(!t.checked){
-        const child = spawnReturnCopy(t);   // carries details + links forward
-        t.childId = child.id;
+        if(t.seriesId && isSeries(t)){
+          // Series: a missed occurrence is just skipped. Only spawn a return-copy
+          // when the LAST instance (latest by date+time) has passed unchecked.
+          const last = lastInstance(t.seriesId);
+          if(last && last.id===t.id){
+            const child = spawnReturnCopy(t);
+            t.childId = child.id;
+          }
+        } else {
+          const child = spawnReturnCopy(t);   // normal block: carries details + links forward
+          t.childId = child.id;
+        }
       }
     }
   }
@@ -538,6 +564,38 @@ function spawnReturnCopy(src){
   if(linksOf(src).length){ setLinks(child.id, [...linksOf(src)]); }
   return child;
 }
+
+/* ---------- Series (grouped calendar instances sharing one identity) ----------
+   Instances of a series share a `seriesId`. Shared fields (title, details, links,
+   createdAt, priorityManual) are kept in sync across all instances; time/duration/
+   completion are per-instance. */
+function seriesMembers(seriesId){
+  return seriesId ? state.tasks.filter(t=>t.seriesId===seriesId) : [];
+}
+function isSeries(t){ return !!(t && t.seriesId && seriesMembers(t.seriesId).length>1); }
+// The latest instance of a series by absolute date+time (governs return-copy on miss).
+function lastInstance(seriesId){
+  const members = seriesMembers(seriesId).filter(t=>t.status==='scheduled');
+  if(!members.length) return null;
+  return members.reduce((latest,t)=>{
+    const te = slotToDate(t.dayIndex, t.startSlot+t.lenSlots, t.weekKey).getTime();
+    const le = latest ? slotToDate(latest.dayIndex, latest.startSlot+latest.lenSlots, latest.weekKey).getTime() : -Infinity;
+    return te>le ? t : latest;
+  }, null);
+}
+// Propagate shared fields from one instance to its siblings.
+function syncSeriesShared(src){
+  if(!src.seriesId) return;
+  seriesMembers(src.seriesId).forEach(m=>{
+    if(m.id===src.id) return;
+    m.title = src.title;
+    m.details = src.details ? {...src.details} : undefined;
+    m.createdAt = src.createdAt;
+    m.priorityManual = src.priorityManual;
+    m.linkedIds = [...(src.linkedIds||[])];
+  });
+}
+
 
 /* ---------- Week rollover ----------
    Runs on load and periodically. When the real week advances past the last
@@ -599,7 +657,12 @@ function completeTask(t){
   // checking anywhere: remove the associated todo instance, keep calendar block
   t.checked = true;
   ensureDetails(t);
-  t.details.completionDate = toLocalDatetime(new Date());   // auto-stamp completion
+  const stamp = toLocalDatetime(new Date());
+  if(t.seriesId){
+    t.completedAt = stamp;          // series: completion is PER-INSTANCE
+  } else {
+    t.details.completionDate = stamp;   // normal item: shared detail field
+  }
   if(t.status === 'scheduled'){
     // if this block spawned a child todo (missed then re-listed), remove that child
     if(t.childId){
@@ -618,7 +681,8 @@ function completeTask(t){
 function uncheckTask(t){
   t.checked = false;
   ensureDetails(t);
-  t.details.completionDate = '';   // clears on uncheck; re-stamps if completed again
+  if(t.seriesId){ t.completedAt = ''; }              // series: per-instance
+  else { t.details.completionDate = ''; }            // normal: shared field
   // remove any completed shadow
   state.tasks = state.tasks.filter(x=>!(x.shadowOf===t.id));
   if(t.status==='completed') t.status='todo';
@@ -805,6 +869,13 @@ function renderCalendar(){
       col.appendChild(makeBlock(t));
     });
     attachDrop(col, dayIndex);
+    // right-click empty space in a day column -> Paste menu (if a block was copied)
+    col.addEventListener('contextmenu', (e)=>{
+      if(e.target.closest('.block')) return;   // block's own menu handles this
+      e.preventDefault();
+      const slot = slotFromEvent(col, e);
+      showPasteMenu(e.clientX, e.clientY, dayIndex, slot);
+    });
     grid.appendChild(col);
   });
 
@@ -815,16 +886,19 @@ function renderCalendar(){
 
 function makeBlock(t){
   const b = document.createElement('div');
-  b.className='block'+(t.allDay?' allday':'')+(t.spent?' spent':'')+(t.checked?' checked':'');
+  b.className='block'+(t.allDay?' allday':'')+(t.spent?' spent':'')+(t.checked?' checked':'')+(isSeries(t)?' series':'');
   b.style.top = (t.startSlot*SLOT_PX)+'px';
   b.style.height = (t.lenSlots*SLOT_PX - 2)+'px';
   b.dataset.id = t.id;
+  const badges =
+    (isSeries(t)?`<span class="series-badge" title="Part of a series">⧉ series</span>`:'') +
+    (linksOf(t).length?` <span class="link-badge">🔗 ${linksOf(t).length}</span>`:'');
   b.innerHTML = `
     <div class="b-top">
       <input type="checkbox" class="cb" ${t.checked?'checked':''} title="Complete">
       <div>
         <div class="b-title"></div>
-        <div class="b-time">${fmtTime(t.startSlot)}–${fmtTime(t.startSlot+t.lenSlots)}${linksOf(t).length?` <span class="link-badge">🔗 ${linksOf(t).length}</span>`:''}</div>
+        <div class="b-time">${fmtTime(t.startSlot)}–${fmtTime(t.startSlot+t.lenSlots)}${badges}</div>
       </div>
       <button class="expand b-exp" title="Open details">⤢</button>
       <button class="b-del" title="Delete from calendar">×</button>
@@ -843,6 +917,11 @@ function makeBlock(t){
     e.stopPropagation();
     removeTask(t.id);
     save(); render();
+  });
+  // right-click a block -> context menu with Copy (and series actions)
+  b.addEventListener('contextmenu', (e)=>{
+    e.preventDefault(); e.stopPropagation();
+    showBlockMenu(e.clientX, e.clientY, t);
   });
   enableBlockDrag(b, t);          // spent blocks are draggable too, to reschedule
   if(!t.spent){
@@ -948,6 +1027,100 @@ function placeTask(id, dayIndex, slot, len){
   render();
 }
 
+/* ---------- Series copy / paste + context menus ---------- */
+let seriesClipboardId = null;   // id of the block that was right-click-copied
+
+function newSeriesId(){ return 's' + (state.seq++) + '-' + Date.now().toString(36); }
+
+// Right-click menu on a block: Copy (+ series-aware label).
+function showBlockMenu(x, y, t){
+  const items = [
+    { label: isSeries(t) ? 'Copy series instance' : 'Copy as series', action: ()=>{
+        seriesClipboardId = t.id;
+      }
+    }
+  ];
+  showContextMenu(x, y, items);
+}
+
+// Right-click menu on empty calendar space: Paste (only if something's copied).
+function showPasteMenu(x, y, dayIndex, slot){
+  if(!seriesClipboardId){ return; }
+  const src = state.tasks.find(t=>t.id===seriesClipboardId);
+  if(!src){ seriesClipboardId=null; return; }
+  showContextMenu(x, y, [
+    { label: 'Paste series instance here', action: ()=> pasteSeriesInstance(dayIndex, slot) }
+  ]);
+}
+
+// Paste a new instance of the copied block onto the current week at (dayIndex, slot).
+function pasteSeriesInstance(dayIndex, slot){
+  const src = state.tasks.find(t=>t.id===seriesClipboardId);
+  if(!src) return;
+  const len = src.lenSlots || 2;
+  // respect collision rules (all-day overlaps freely; normal blocks don't)
+  if(!placementOK(dayIndex, slot, len, src.allDay)){
+    flashMenuMsg('That slot is occupied.');
+    return;
+  }
+  // ensure the source is a series (assign a shared id the first time)
+  if(!src.seriesId){ src.seriesId = newSeriesId(); }
+  const inst = {
+    id: uid(),
+    seriesId: src.seriesId,
+    title: src.title, allDay: src.allDay,
+    status:'scheduled',
+    dayIndex, startSlot: slot, lenSlots: len,
+    weekKey: currentWeekKey(),
+    checked:false, spent:false,
+    createdAt: src.createdAt,
+    priorityManual: src.priorityManual,
+    details: src.details ? {...src.details} : undefined,
+    linkedIds: [...(src.linkedIds||[])]
+  };
+  state.tasks.push(inst);
+  // keep links symmetric for the new instance
+  if(inst.linkedIds.length) setLinks(inst.id, [...inst.linkedIds]);
+  save();
+  sweepOverdue();
+  render();
+}
+
+// Generic lightweight context menu.
+let ctxMenuEl = null;
+function showContextMenu(x, y, items){
+  closeContextMenu();
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu';
+  items.forEach(it=>{
+    const b = document.createElement('button');
+    b.className = 'ctx-item';
+    b.textContent = it.label;
+    b.addEventListener('click', ()=>{ it.action(); closeContextMenu(); });
+    menu.appendChild(b);
+  });
+  document.body.appendChild(menu);
+  // keep it on-screen
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = Math.min(x, vw - rect.width - 8) + 'px';
+  menu.style.top  = Math.min(y, vh - rect.height - 8) + 'px';
+  ctxMenuEl = menu;
+}
+function flashMenuMsg(msg){
+  closeContextMenu();
+  const m = document.createElement('div');
+  m.className='ctx-menu'; m.innerHTML = `<div class="ctx-msg"></div>`;
+  m.querySelector('.ctx-msg').textContent = msg;
+  document.body.appendChild(m);
+  m.style.left = '50%'; m.style.top = '20px'; m.style.transform='translateX(-50%)';
+  setTimeout(()=>m.remove(), 1400);
+}
+function closeContextMenu(){ if(ctxMenuEl){ ctxMenuEl.remove(); ctxMenuEl=null; } }
+document.addEventListener('click', closeContextMenu);
+document.addEventListener('scroll', closeContextMenu, true);
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeContextMenu(); });
+
 /* ---------- Move an existing block (re-drag / reschedule) ---------- */
 function enableBlockDrag(b, t){
   b.setAttribute('draggable','true');
@@ -1038,7 +1211,7 @@ todoListEl.addEventListener('dragstart', (e)=>{
 
 /* ---------- CSV export / import (merge, dedup by id) ---------- */
 function toCSV(){
-  const cols = ['id','title','allDay','status','dayIndex','startSlot','lenSlots','checked','spent','childId','shadowOf','order','weekKey','returned','createdAt','priorityManual','linkedIds','details'];
+  const cols = ['id','title','allDay','status','dayIndex','startSlot','lenSlots','checked','spent','childId','shadowOf','order','weekKey','returned','createdAt','priorityManual','seriesId','completedAt','linkedIds','details'];
   const esc = v => {
     if(v===undefined||v===null) return '';
     const s = (typeof v==='object') ? JSON.stringify(v) : String(v);
@@ -1110,10 +1283,12 @@ function exportWeeklySummary(){
 
   const d = t => ensureDetails(t);
   const isDone = t => !!t.checked || t.status==='completed';
+  // completion timestamp: per-instance for series, shared detail otherwise
+  const completionOf = t => t.seriesId ? (t.completedAt||'') : (d(t).completionDate||'');
 
   // completed first, by completion date ascending; then incomplete (stable)
   const done = rows.filter(isDone).sort((a,b)=>{
-    const ca=d(a).completionDate||'', cb=d(b).completionDate||'';
+    const ca=completionOf(a), cb=completionOf(b);
     return ca<cb ? -1 : ca>cb ? 1 : 0;
   });
   const open = rows.filter(t=>!isDone(t));
@@ -1136,7 +1311,7 @@ function exportWeeklySummary(){
       dt.deliverable||'',                         // Deliverable (own)
       dt.link||'',                                // Link to Deliverable if Applicable
       dt.description||'',                         // Description
-      dt.completionDate||'',                      // Completion Date
+      completionOf(t),                            // Completion Date
       ld ? (ld.project||'') : '',                 // Next Step = linked task's Project
       ld ? (ld.deliverable||'') : '',             // Deliverable = linked task's Deliverable
       linked ? taskCalendarDate(linked) : ''      // Target Date = linked task's calendar date
@@ -1318,6 +1493,7 @@ function readIntoTask(){
   d.deliverable   = F.deliverable.value;
   d.link          = F.link.value;
   d.completionDate= F.completion.value;
+  if(t.seriesId) syncSeriesShared(t);   // propagate shared fields to series instances
   return t;
 }
 
