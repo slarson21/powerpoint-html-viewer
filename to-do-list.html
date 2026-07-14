@@ -142,12 +142,22 @@
     font-family:"SF Mono",ui-monospace,monospace;font-size:10px;color:var(--spent);
     position:absolute;top:6px;right:8px;
   }
+  .task .repeat-toggle{
+    position:absolute;bottom:5px;right:46px;display:flex;align-items:center;gap:2px;
+    font-size:12px;color:var(--spent);cursor:pointer;user-select:none;
+  }
+  .task .repeat-toggle input{width:13px;height:13px;accent-color:var(--sage);cursor:pointer}
+  .task.repeating .repeat-toggle{color:var(--sage)}
   .task .del{
     position:absolute;bottom:6px;right:7px;border:none;background:none;color:var(--spent);
     font-size:15px;line-height:1;padding:2px;opacity:0;transition:.12s;
   }
   .task:hover .del{opacity:1}
   .task .del:hover{color:var(--accent-deep)}
+  /* repeating tasks: green left accent; missed-last-week: red tile */
+  .task.repeating{border-left-color:var(--sage)}
+  .task.repeat-missed{border-left-color:#b3402a;background:#fbe9e4}
+  .task.repeat-missed .title{color:#8f3320}
   .completed .task{border-left-color:var(--sage);opacity:.8;cursor:default}
   .completed .title{text-decoration:line-through;color:var(--ink-soft)}
 
@@ -307,14 +317,22 @@
     font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;white-space:nowrap}
   .series-badge{display:inline-flex;align-items:center;gap:2px;color:var(--accent-deep);
     font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;white-space:nowrap;margin-right:4px}
-  .event-badge{display:inline-flex;align-items:center;gap:2px;color:#6b6f8f;
-    font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;white-space:nowrap;margin-right:4px}
+  .event-badge{display:inline-flex;align-items:center;gap:2px;color:#6b6f8f;    font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;white-space:nowrap;margin-right:4px}
   .block.series{border-left-style:double;border-left-width:4px}
   .block.event{border-left-color:#6b6f8f;background:#f4f4f8}
+  .block.repeating{border-left-color:var(--sage)}
+  .repeat-badge{display:inline-flex;align-items:center;gap:2px;color:var(--sage);
+    font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;white-space:nowrap;margin-right:4px}
   .task.event{border-left-color:#6b6f8f}
   .cb-spacer{width:16px;flex:none}
   /* title-only modal for calendar events */
   .modal.event-only .modal-body{display:none}
+  /* repeat-weekly row in the detail modal */
+  .modal-repeat{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);
+    cursor:pointer;user-select:none;margin:-4px 0 2px}
+  .modal-repeat input{width:16px;height:16px;accent-color:var(--sage);cursor:pointer}
+  .modal-repeat span{color:var(--sage);font-weight:500}
+  .modal.event-only .modal-repeat{display:none}
 
   /* right-click context menu */
   .ctx-menu{
@@ -415,6 +433,7 @@
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <button class="modal-close" id="modalClose" title="Close">×</button>
     <input type="text" class="modal-title" id="modalTitle" placeholder="Untitled task">
+    <label class="modal-repeat" id="modalRepeatRow"><input type="checkbox" id="dRepeat"> <span>↻ Repeat weekly</span></label>
     <div class="modal-body" id="modalBody">
       <label class="fld">
         <span class="fld-label">Key Initiative</span>
@@ -728,16 +747,78 @@ function rolloverWeeks(){
 
   if(state.lastWeekKey !== nowKey){
     // --- week advanced ---
-    // 1. unchecked prior-week blocks -> back to to-do list (top), once each
+
+    // 0. Capture, per repeat template, whether last week's task was completed.
+    //    Rule: if it was scheduled, only the LAST instance (latest by date+time)
+    //    matters — matching the series completion rule. If it was never scheduled
+    //    (only sat in the list), the single list instance's checked state decides.
+    //    (Must read this BEFORE clearing the completed list below.)
+    const repeatSeen = {};   // repeatId -> a sample instance to clone shared fields from
+    const repeatGroups = {}; // repeatId -> all instances from last week
+    state.tasks.forEach(t=>{
+      if(!t.repeatId) return;
+      (repeatGroups[t.repeatId] = repeatGroups[t.repeatId] || []).push(t);
+      repeatSeen[t.repeatId] = t;   // keep a reference to copy title/details from
+    });
+    const repeatDone = {};   // repeatId -> was it completed last week (per the rule above)
+    Object.keys(repeatGroups).forEach(rid=>{
+      const group = repeatGroups[rid];
+      const scheduledOnes = group.filter(t=>t.status==='scheduled');
+      if(scheduledOnes.length){
+        // find the latest-ending scheduled instance; done iff IT was checked/completed
+        const last = scheduledOnes.reduce((L,t)=>{
+          const te = slotToDate(t.dayIndex, t.startSlot+t.lenSlots, t.weekKey).getTime();
+          const le = L ? slotToDate(L.dayIndex, L.startSlot+L.lenSlots, L.weekKey).getTime() : -Infinity;
+          return te>le ? t : L;
+        }, null);
+        repeatDone[rid] = !!(last && (last.checked || last.completedThisWeek || last.status==='completed'));
+      } else {
+        // never scheduled: the list instance must have been checked/completed
+        repeatDone[rid] = group.some(t=>t.checked || t.status==='completed' || t.completedThisWeek);
+      }
+    });
+
+    // 1. unchecked prior-week blocks -> back to to-do list (top), once each.
+    //    Repeating tasks are exempt (they regenerate below instead).
     for(const t of state.tasks){
-      if(t.status==='scheduled' && t.weekKey && t.weekKey!==nowKey && !t.checked && !t.returned && !t.isEvent){
+      if(t.status==='scheduled' && t.weekKey && t.weekKey!==nowKey && !t.checked && !t.returned && !t.isEvent && !t.repeatId){
         t.returned = true;                 // guard so we only return it once
         const child = spawnReturnCopy(t);  // carries details + links forward
         t.childId = child.id;
       }
     }
+
     // 2. clear everything already in the completed list
     state.tasks = state.tasks.filter(t=>t.status!=='completed');
+
+    // 3. Remove ALL prior-week instances of repeating tasks (replace, not stack),
+    //    then spawn one fresh to-do instance per template for the new week.
+    const repeatIds = Object.keys(repeatDone);
+    if(repeatIds.length){
+      state.tasks = state.tasks.filter(t=>!(t.repeatId && (t.repeatWeekKey||t.weekKey)!==nowKey));
+      repeatIds.forEach(rid=>{
+        // if a fresh instance for this week already exists, don't duplicate
+        const hasThisWeek = state.tasks.some(t=>t.repeatId===rid && (t.repeatWeekKey||t.weekKey)===nowKey);
+        if(hasThisWeek) return;
+        const src = repeatSeen[rid];
+        const fresh = {
+          id: uid(), repeatId: rid, repeatWeekKey: nowKey,
+          title: src.title, allDay: src.allDay, isEvent:false,
+          status:'todo', checked:false, spent:false,
+          order: minOrder()-1,
+          createdAt: Date.now(),
+          priorityManual: src.priorityManual,
+          details: src.details ? {...src.details} : undefined,
+          linkedIds: [],
+          completedThisWeek:false,
+          repeatMissed: !repeatDone[rid]    // red flag if last week went undone
+        };
+        // reset a fresh instance's completion detail so it doesn't inherit last week's date
+        if(fresh.details){ fresh.details = {...fresh.details, completionDate:''}; }
+        state.tasks.push(fresh);
+      });
+    }
+
     state.lastWeekKey = nowKey;
     changed = true;
   }
@@ -776,6 +857,17 @@ function completeTask(t){
   } else {
     t.details.completionDate = stamp;   // normal item: shared detail field
   }
+  // repeating task: mark THIS instance done (per-instance, so the last-instance rule
+  // at rollover is accurate). Clear the red "missed" nudge across the current week's
+  // instances since some progress was made.
+  if(t.repeatId){
+    t.completedThisWeek = true;
+    repeatInstances(t.repeatId).forEach(m=>{
+      if((m.repeatWeekKey||m.weekKey)===(t.repeatWeekKey||t.weekKey||currentWeekKey())){
+        m.repeatMissed = false;
+      }
+    });
+  }
   if(t.status === 'scheduled'){
     // if this block spawned a child todo (missed then re-listed), remove that child
     if(t.childId){
@@ -796,6 +888,7 @@ function uncheckTask(t){
   ensureDetails(t);
   if(t.seriesId){ t.completedAt = ''; }              // series: per-instance
   else { t.details.completionDate = ''; }            // normal: shared field
+  if(t.repeatId){ t.completedThisWeek = false; }     // repeating: this instance no longer counts as done
   // remove any completed shadow
   state.tasks = state.tasks.filter(x=>!(x.shadowOf===t.id));
   if(t.status==='completed') t.status='todo';
@@ -871,7 +964,13 @@ function render(){
   document.getElementById('doneCount').textContent = dones().length || "";
 }
 function todos(){
-  return state.tasks.filter(t=>t.status==='todo').sort((a,b)=>a.order-b.order);
+  // repeating weekly tasks pin to the top (in no particular order among themselves),
+  // then normal tasks by their manual order
+  return state.tasks.filter(t=>t.status==='todo').sort((a,b)=>{
+    const ar = a.repeatId?0:1, br = b.repeatId?0:1;
+    if(ar!==br) return ar-br;
+    return a.order-b.order;
+  });
 }
 function dones(){
   return state.tasks.filter(t=>t.status==='completed');
@@ -888,11 +987,13 @@ function renderTodo(){
   }
   items.forEach((t,i)=>{
     const el = document.createElement('div');
-    el.className = 'task' + (t.allDay?' allday':'') + (t.isEvent?' event':'');
+    el.className = 'task' + (t.allDay?' allday':'') + (t.isEvent?' event':'')
+      + (t.repeatId?' repeating':'') + (t.repeatMissed?' repeat-missed':'');
     el.dataset.id = t.id;
     const nLinks = linksOf(t).length;
     const metaBits = [
       t.isEvent?'calendar event':'',
+      t.repeatId?'weekly':'',
       t.allDay?'all-day':'',
       nLinks?`<span class="link-badge" title="${nLinks} related">🔗 ${nLinks}</span>`:''
     ].filter(Boolean).join(' · ');
@@ -900,6 +1001,9 @@ function renderTodo(){
     const checkbox = t.isEvent
       ? `<span class="cb-spacer"></span>`
       : `<input type="checkbox" class="cb" title="Mark complete">`;
+    // repeat-weekly toggle (not for calendar events)
+    const repeatToggle = t.isEvent ? '' :
+      `<label class="repeat-toggle" title="Repeat weekly"><input type="checkbox" class="rep" ${t.repeatId?'checked':''}> ↻</label>`;
     el.innerHTML = `
       ${checkbox}
       <div class="body">
@@ -907,11 +1011,14 @@ function renderTodo(){
         <div class="meta">${metaBits}</div>
       </div>
       <span class="prio">${String(i+1).padStart(2,'0')}</span>
+      ${repeatToggle}
       <button class="expand" title="Open details">⤢</button>
       <button class="del" title="Delete">×</button>`;
     el.querySelector('.title').textContent = t.title;
     const cb = el.querySelector('.cb');
     if(cb) cb.addEventListener('change', ()=>completeTask(t));
+    const rep = el.querySelector('.rep');
+    if(rep) rep.addEventListener('change', (e)=>{ e.stopPropagation(); setRepeat(t.id, e.target.checked); });
     el.querySelector('.expand').addEventListener('click', (e)=>{ e.stopPropagation(); openDetail(t.id); });
     el.querySelector('.del').addEventListener('click', ()=>{ removeTask(t.id); save(); render(); });
     todoListEl.appendChild(el);
@@ -1015,12 +1122,13 @@ function renderCalendar(){
 
 function makeBlock(t){
   const b = document.createElement('div');
-  b.className='block'+(t.allDay?' allday':'')+(t.spent?' spent':'')+(t.checked?' checked':'')+(isSeries(t)?' series':'')+(t.isEvent?' event':'');
+  b.className='block'+(t.allDay?' allday':'')+(t.spent?' spent':'')+(t.checked?' checked':'')+(isSeries(t)?' series':'')+(t.isEvent?' event':'')+(t.repeatId?' repeating':'');
   b.style.top = (t.startSlot*SLOT_PX)+'px';
   b.style.height = (t.lenSlots*SLOT_PX - 2)+'px';
   b.dataset.id = t.id;
   const badges =
     (t.isEvent?`<span class="event-badge" title="Calendar event">◇ event</span>`:'') +
+    (t.repeatId?`<span class="repeat-badge" title="Repeats weekly">↻ weekly</span>`:'') +
     (isSeries(t)?`<span class="series-badge" title="Part of a series">⧉ series</span>`:'') +
     (linksOf(t).length?` <span class="link-badge">🔗 ${linksOf(t).length}</span>`:'');
   // calendar events have no checkbox (they can't be completed, only pass/grey)
@@ -1179,6 +1287,35 @@ function unscheduleTask(id){
 }
 
 function newSeriesId(){ return 's' + (state.seq++) + '-' + Date.now().toString(36); }
+function newRepeatId(){ return 'r' + (state.seq++) + '-' + Date.now().toString(36); }
+
+/* ---------- Repeat-weekly tasks ----------
+   A repeating task carries a stable `repeatId` across weeks. Each week has its own
+   instance (its own id). `repeatWeekKey` marks which week an instance belongs to.
+   `completedThisWeek` records whether that week's instance was ever checked, used to
+   flag the next week's fresh instance red if last week's went undone. */
+// All to-do/scheduled instances belonging to a repeat template.
+function repeatInstances(repeatId){
+  return repeatId ? state.tasks.filter(t=>t.repeatId===repeatId) : [];
+}
+// Toggle the repeat-weekly flag on a task (and its series siblings, if any).
+function setRepeat(id, on){
+  const t = state.tasks.find(x=>x.id===id);
+  if(!t || t.isEvent) return;
+  if(on){
+    const rid = t.repeatId || newRepeatId();
+    // apply to all instances that share this task's identity (series + current)
+    const group = t.seriesId ? seriesMembers(t.seriesId) : [t];
+    group.forEach(m=>{ m.repeatId = rid; m.repeatWeekKey = m.repeatWeekKey || currentWeekKey(); });
+  } else {
+    const rid = t.repeatId;
+    const group = t.seriesId ? seriesMembers(t.seriesId) : [t];
+    group.forEach(m=>{ delete m.repeatId; delete m.repeatWeekKey; delete m.completedThisWeek; delete m.repeatMissed; });
+    // also stop future regeneration for any other instances of the same template
+    if(rid) state.tasks.forEach(m=>{ if(m.repeatId===rid){ delete m.repeatId; delete m.repeatWeekKey; delete m.completedThisWeek; delete m.repeatMissed; } });
+  }
+  save(); render();
+}
 
 // Right-click menu on a block: Copy (+ series-aware label).
 function showBlockMenu(x, y, t){
@@ -1188,6 +1325,10 @@ function showBlockMenu(x, y, t){
       }
     }
   ];
+  if(!t.isEvent){
+    items.push({ label: t.repeatId ? 'Stop repeating weekly' : 'Repeat weekly',
+      action: ()=> setRepeat(t.id, !t.repeatId) });
+  }
   showContextMenu(x, y, items);
 }
 
@@ -1254,7 +1395,7 @@ function pasteSeriesInstance(dayIndex, slot){
   const inst = {
     id: uid(),
     seriesId: src.seriesId,
-    title: src.title, allDay: src.allDay,
+    title: src.title, allDay: src.allDay, isEvent: src.isEvent,
     status:'scheduled',
     dayIndex, startSlot: slot, lenSlots: len,
     weekKey: currentWeekKey(),
@@ -1262,7 +1403,9 @@ function pasteSeriesInstance(dayIndex, slot){
     createdAt: src.createdAt,
     priorityManual: src.priorityManual,
     details: src.details ? {...src.details} : undefined,
-    linkedIds: [...(src.linkedIds||[])]
+    linkedIds: [...(src.linkedIds||[])],
+    repeatId: src.repeatId,                         // stays part of the repeat template
+    repeatWeekKey: src.repeatId ? currentWeekKey() : undefined
   };
   state.tasks.push(inst);
   // keep links symmetric for the new instance
@@ -1452,7 +1595,7 @@ todoListEl.addEventListener('drop', (e)=>{
 
 /* ---------- CSV export / import (merge, dedup by id) ---------- */
 function toCSV(){
-  const cols = ['id','title','allDay','isEvent','status','dayIndex','startSlot','lenSlots','checked','spent','childId','shadowOf','order','weekKey','returned','createdAt','priorityManual','seriesId','completedAt','linkedIds','details'];
+  const cols = ['id','title','allDay','isEvent','status','dayIndex','startSlot','lenSlots','checked','spent','childId','shadowOf','order','weekKey','returned','createdAt','priorityManual','seriesId','completedAt','repeatId','repeatWeekKey','completedThisWeek','repeatMissed','linkedIds','details'];
   const esc = v => {
     if(v===undefined||v===null) return '';
     const s = (typeof v==='object') ? JSON.stringify(v) : String(v);
@@ -1597,7 +1740,7 @@ function importCSV(text){
   const header = rows[0];
   const idx = Object.fromEntries(header.map((h,i)=>[h.trim(),i]));
   const nums = new Set(['dayIndex','startSlot','lenSlots','order','createdAt']);
-  const bools = new Set(['allDay','isEvent','checked','spent','returned','priorityManual']);
+  const bools = new Set(['allDay','isEvent','checked','spent','returned','priorityManual','completedThisWeek','repeatMissed']);
   let added=0, updated=0;
   for(let r=1;r<rows.length;r++){
     const cells = rows[r];
@@ -1678,8 +1821,14 @@ function openDetail(id){
   document.getElementById('saveState').textContent = '';
 
   // An event is title-only UNLESS the "add events to summary" toggle makes events tasky.
-  const titleOnly = t.isEvent && !eventsAreTasky();
+  const titleOnly = !!(t.isEvent && !eventsAreTasky());
   document.getElementById('modalScrim').querySelector('.modal').classList.toggle('event-only', titleOnly);
+
+  // repeat-weekly checkbox (hidden for events; events can't repeat)
+  const repRow = document.getElementById('modalRepeatRow');
+  const repCb = document.getElementById('dRepeat');
+  repRow.style.display = t.isEvent ? 'none' : 'flex';
+  repCb.checked = !!t.repeatId;
 
   // For a tasky event, Completion Date mirrors its end time (no checkbox to set it).
   if(t.isEvent && eventsAreTasky() && t.status==='scheduled'){
@@ -1793,6 +1942,10 @@ function closeDetail(){
   openDetailId = null;
 }
 document.getElementById('modalSave').addEventListener('click', ()=>{ clearTimeout(autosaveTimer); commitDetail(true); });
+document.getElementById('dRepeat').addEventListener('change', (e)=>{
+  if(!openDetailId) return;
+  setRepeat(openDetailId, e.target.checked);   // persists + re-renders list/calendar; modal stays open
+});
 document.getElementById('modalClose').addEventListener('click', closeDetail);
 scrim.addEventListener('click', (e)=>{ if(e.target===scrim) closeDetail(); });
 document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !scrim.hidden) closeDetail(); });
