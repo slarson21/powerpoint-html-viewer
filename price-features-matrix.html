@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Detector Market — Price vs. Detected Substances</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f2f7f9;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 24px;
+  }
+  @media (prefers-color-scheme: dark) { body { background: #111110; } }
+  .card {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 0.5px solid rgba(11,11,11,0.10);
+    padding: 28px 32px 24px;
+    width: 100%;
+    max-width: 960px;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    .card { background: #1a1a19; border-color: rgba(255,255,255,0.10); }
+  }
+  .chart-title { font-size: 18px; font-weight: 500; color: #0b0b0b; margin-bottom: 4px; }
+  @media (prefers-color-scheme: dark) { .chart-title { color: #ffffff; } }
+  .chart-sub { font-size: 13px; color: #52514e; margin-bottom: 20px; }
+  @media (prefers-color-scheme: dark) { .chart-sub { color: #898781; } }
+  #legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 20px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #52514e; }
+  @media (prefers-color-scheme: dark) { .legend-item { color: #c3c2b7; } }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .chart-wrap { position: relative; width: 100%; height: 520px; }
+  #chart { cursor: crosshair; }
+  .note { margin-top: 14px; font-size: 11px; color: #898781; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="chart-title">Price vs. detected substances — home detector market</div>
+  <div class="chart-sub">34 products &middot; horizontal bars show price ranges &middot; hover a product for details</div>
+  <div id="legend"></div>
+  <div class="chart-wrap">
+    <canvas id="chart" role="img" aria-label="Scatter chart: 34 home detector and purifier products plotted by price (x-axis) and number of detected substances (y-axis).">34 products plotted by price and substance count.</canvas>
+  </div>
+  <div class="note">Sources: manufacturer listings and retailer pricing. Prices reflect approximate consumer retail mid-2026 and may vary.</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+const CATS = [
+  { label: "Air quality monitors",      color: "#2a78d6" },
+  { label: "CO detectors",              color: "#1baf7a" },
+  { label: "Radon monitors",            color: "#eda100" },
+  { label: "Formaldehyde monitors",     color: "#4a3aa7" },
+  { label: "Purifiers (filter only)",   color: "#898781" },
+  { label: "Purifiers (detect+purify)", color: "#e34948" },
+  { label: "CO chronic (low-level)",    color: "#eb6834" },
+];
+
+const products = [
+  { name:"IKEA VINDSTYRKA",                  lo:15,  hi:15,  cnt:4,  cat:0 },
+  { name:"First Alert RD1 test kit",         lo:15,  hi:25,  cnt:1,  cat:2 },
+  { name:"First Alert CO600 Plug-In",        lo:25,  hi:30,  cnt:1,  cat:1 },
+  { name:"First Alert CO710 (10-yr)",        lo:35,  hi:35,  cnt:1,  cat:1 },
+  { name:"X-Sense XC03-W",                   lo:35,  hi:45,  cnt:1,  cat:1 },
+  { name:"GoveeLife Smart AQ Monitor",       lo:40,  hi:40,  cnt:4,  cat:0 },
+  { name:"Defender CA6150",                  lo:40,  hi:50,  cnt:1,  cat:6 },
+  { name:"Kidde Smart Smoke + CO",           lo:50,  hi:60,  cnt:2,  cat:1 },
+  { name:"Forensics Detectors FD-D001",      lo:50,  hi:70,  cnt:1,  cat:6 },
+  { name:"INKBIRD IAQ series",               lo:60,  hi:100, cnt:7,  cat:3 },
+  { name:"Amazon Smart AQ Monitor",          lo:70,  hi:70,  cnt:5,  cat:0 },
+  { name:"Temtop LKC-1000S 2nd",            lo:99,  hi:129, cnt:6,  cat:3 },
+  { name:"Levoit Core 400S",                 lo:100, hi:130, cnt:8,  cat:4 },
+  { name:"Coway Airmega AP-1512HH",          lo:108, hi:200, cnt:7,  cat:4 },
+  { name:"CO Experts PRO-10",                lo:120, hi:150, cnt:1,  cat:6 },
+  { name:"Temtop LKC-1000S+",               lo:129, hi:149, cnt:7,  cat:3 },
+  { name:"Awair Element",                    lo:149, hi:149, cnt:5,  cat:0 },
+  { name:"Temtop M2000 2nd Gen",            lo:149, hi:179, cnt:6,  cat:3 },
+  { name:"Qingping Air Monitor Gen 2",       lo:150, hi:150, cnt:7,  cat:0 },
+  { name:"Blueair Blue Pure 311i Max",       lo:150, hi:200, cnt:7,  cat:4 },
+  { name:"Winix 5510",                       lo:150, hi:200, cnt:8,  cat:4 },
+  { name:"Airthings Corentium Home 2",       lo:159, hi:179, cnt:3,  cat:2 },
+  { name:"Ecosense RadonEye RD200",          lo:179, hi:199, cnt:1,  cat:2 },
+  { name:"Safety Siren Pro4",                lo:179, hi:179, cnt:1,  cat:2 },
+  { name:"Levoit Core 600S",                 lo:200, hi:230, cnt:8,  cat:5 },
+  { name:"PurpleAir Indoor",                 lo:229, hi:229, cnt:7,  cat:0 },
+  { name:"IQAir AirVisual Pro",              lo:249, hi:269, cnt:5,  cat:0 },
+  { name:"TPI 780",                          lo:250, hi:250, cnt:1,  cat:6 },
+  { name:"Airthings View Plus",              lo:329, hi:329, cnt:7,  cat:0 },
+  { name:"Dyson Purifier Hot+Cool HP07",     lo:550, hi:650, cnt:10, cat:5 },
+  { name:"Airthings Renew",                  lo:550, hi:700, cnt:11, cat:5 },
+  { name:"Molekule Air Pro",                 lo:600, hi:800, cnt:6,  cat:5 },
+  { name:"Dyson BP04 Formaldehyde",          lo:700, hi:800, cnt:11, cat:5 },
+  { name:"IQAir HealthPro Plus",             lo:899, hi:999, cnt:10, cat:4 },
+];
+
+const gridColor   = isDark ? "#2c2c2a" : "#e1e0d9";
+const tickColor   = "#898781";
+const mutedColor  = isDark ? "#c3c2b7" : "#52514e";
+const bgColor     = isDark ? "#1a1a19" : "#ffffff";
+const fgColor     = isDark ? "#ffffff" : "#0b0b0b";
+const borderColor = isDark ? "#444441" : "#c3c2b7";
+
+let hoveredProduct = null;
+let chartRef = null;
+
+const barPlugin = {
+  id: "priceRangeBar",
+  afterDatasetsDraw(chart) {
+    const { ctx, scales: { x, y } } = chart;
+    ctx.save();
+    products.forEach(p => {
+      const xLo  = x.getPixelForValue(p.lo);
+      const xHi  = x.getPixelForValue(p.hi);
+      const yPx  = y.getPixelForValue(p.cnt);
+      const col  = CATS[p.cat].color;
+      const hot  = hoveredProduct && hoveredProduct.name === p.name;
+
+      if (p.lo === p.hi) {
+        ctx.beginPath();
+        ctx.arc(xLo, yPx, hot ? 7 : 5, 0, Math.PI * 2);
+        ctx.fillStyle = hot ? col : col + "BB";
+        ctx.strokeStyle = col;
+        ctx.lineWidth = hot ? 2.5 : 1.5;
+        ctx.fill(); ctx.stroke();
+      } else {
+        const h = hot ? 10 : 8;
+        ctx.beginPath();
+        ctx.roundRect(xLo, yPx - h / 2, Math.max(xHi - xLo, 2), h, 4);
+        ctx.fillStyle = hot ? col + "BB" : col + "66";
+        ctx.strokeStyle = col;
+        ctx.lineWidth = hot ? 2 : 1.5;
+        ctx.fill(); ctx.stroke();
+        [xLo, xHi].forEach(xv => {
+          ctx.beginPath();
+          ctx.arc(xv, yPx, hot ? 5 : 4, 0, Math.PI * 2);
+          ctx.fillStyle = col;
+          ctx.fill();
+        });
+      }
+    });
+    ctx.restore();
+  },
+
+  afterDraw(chart) {
+    if (!hoveredProduct) return;
+    const p = hoveredProduct;
+    const { ctx, scales: { x, y }, width } = chart;
+    const xLo  = x.getPixelForValue(p.lo);
+    const xHi  = x.getPixelForValue(p.hi);
+    const xMid = (xLo + xHi) / 2;
+    const yPx  = y.getPixelForValue(p.cnt);
+    const col  = CATS[p.cat].color;
+
+    const priceStr = p.lo === p.hi ? `$${p.lo}` : `$${p.lo} \u2013 $${p.hi}`;
+    const lines = [
+      { text: p.name,                                    font: `600 13px system-ui,sans-serif`, color: fgColor    },
+      { text: priceStr,                                  font: `500 12px system-ui,sans-serif`, color: col        },
+      { text: `${p.cnt} substance${p.cnt===1?"":"s"} detected`, font: `400 11px system-ui,sans-serif`, color: mutedColor },
+      { text: CATS[p.cat].label,                         font: `400 11px system-ui,sans-serif`, color: mutedColor },
+    ];
+
+    const pad = 12, lineH = 18;
+    ctx.save();
+    const maxW = Math.max(...lines.map(l => { ctx.font = l.font; return ctx.measureText(l.text).width; }));
+    const bw = maxW + pad * 2 + 6;
+    const bh = lines.length * lineH + pad * 2;
+
+    let bx = xMid - bw / 2;
+    let by = yPx - bh - 18;
+    if (bx < 6) bx = 6;
+    if (bx + bw > width - 6) bx = width - bw - 6;
+    if (by < 6) by = yPx + 18;
+
+    ctx.shadowColor = "rgba(0,0,0,0.14)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 3;
+    ctx.fillStyle = bgColor;
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 8);
+    ctx.fill(); ctx.stroke();
+    ctx.shadowColor = "transparent"; ctx.shadowBlur = 0;
+
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, 3, bh, [8, 0, 0, 8]);
+    ctx.fill();
+
+    lines.forEach((line, i) => {
+      ctx.font = line.font;
+      ctx.fillStyle = line.color;
+      ctx.fillText(line.text, bx + pad + 4, by + pad + 13 + i * lineH);
+    });
+    ctx.restore();
+  }
+};
+
+const canvas = document.getElementById("chart");
+
+chartRef = new Chart(canvas, {
+  type: "scatter",
+  data: {
+    datasets: CATS.map((cat, ci) => ({
+      label: cat.label,
+      data: products.filter(p => p.cat === ci).map(p => ({ x: (p.lo+p.hi)/2, y: p.cnt })),
+      backgroundColor: "transparent",
+      borderColor: "transparent",
+      pointRadius: 0,
+      pointHoverRadius: 0,
+    }))
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    layout: { padding: { top: 12, right: 24, bottom: 8, left: 8 } },
+    scales: {
+      x: {
+        type: "linear", min: 0, max: 1060,
+        title: { display: true, text: "Price (USD)", color: mutedColor, font: { size: 12 }, padding: { top: 8 } },
+        ticks: { color: tickColor, font: { size: 11 }, callback: v => `$${v}`, stepSize: 100 },
+        grid: { color: gridColor },
+        border: { color: borderColor }
+      },
+      y: {
+        min: 0, max: 13,
+        title: { display: true, text: "Number of detected substances", color: mutedColor, font: { size: 12 }, padding: { bottom: 8 } },
+        ticks: { color: tickColor, font: { size: 11 }, stepSize: 1, callback: v => Number.isInteger(v) ? v : "" },
+        grid: { color: gridColor },
+        border: { color: borderColor }
+      }
+    },
+    plugins: { legend: { display: false }, tooltip: { enabled: false } }
+  },
+  plugins: [barPlugin]
+});
+
+// Use CSS pixel coordinates — getBoundingClientRect gives CSS pixels,
+// and Chart.js scale.getPixelForValue() also returns CSS pixels
+// (Chart.js handles devicePixelRatio internally via its own canvas scaling).
+// So we do NOT multiply by scaleX/scaleY here.
+canvas.addEventListener("mousemove", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+
+  const { scales: { x, y } } = chartRef;
+
+  // Convert mouse CSS px → data value
+  const mouseDataX = x.getValueForPixel(mouseX);
+  const mouseDataY = y.getValueForPixel(mouseY);
+
+  let closest = null;
+  let minScore = Infinity;
+
+  products.forEach(p => {
+    // Distance in data space on y-axis: must be within 0.35 units
+    const dy = Math.abs(mouseDataY - p.cnt);
+    if (dy > 0.4) return;
+
+    // On x-axis: check if mouse is within or near the bar range
+    const margin = (x.getValueForPixel(mouseX + 12) - x.getValueForPixel(mouseX)); // ~12px in data units
+    const inRange = mouseDataX >= (p.lo - margin) && mouseDataX <= (p.hi + margin);
+    if (!inRange) return;
+
+    // Score: prefer closer on y, and closer to midpoint on x
+    const xMid = (p.lo + p.hi) / 2;
+    const dx = Math.abs(mouseDataX - xMid);
+    const score = dy * 10 + dx * 0.01;
+    if (score < minScore) {
+      minScore = score;
+      closest = p;
+    }
+  });
+
+  if (closest !== hoveredProduct) {
+    hoveredProduct = closest;
+    chartRef.draw();
+  }
+});
+
+canvas.addEventListener("mouseleave", () => {
+  if (hoveredProduct !== null) {
+    hoveredProduct = null;
+    chartRef.draw();
+  }
+});
+
+document.getElementById("legend").innerHTML = CATS.map(cat =>
+  `<span class="legend-item"><span class="legend-swatch" style="background:${cat.color}"></span>${cat.label}</span>`
+).join("");
+</script>
+</body>
+</html>
