@@ -43,7 +43,7 @@
 <body>
 <div class="card">
   <div class="chart-title">Price vs. detected substances — home detector market</div>
-  <div class="chart-sub">39 products &middot; horizontal bars show price ranges &middot; hover any point for details &middot; y-axis jittered slightly to separate overlapping products &middot; inset zooms $0–$80 / 1–3 substances region</div>
+  <div class="chart-sub">39 products &middot; horizontal bars show price ranges &middot; hover any point for details &middot; y-axis jittered to separate overlapping products &middot; outlined circles = Moen concepts &middot; inset zooms $0–$80 / 1–3 substances region</div>
   <div id="legend"></div>
   <div class="chart-wrap">
     <canvas id="chart" role="img" aria-label="Scatter chart of 39 home detector products by price and detected substance count."></canvas>
@@ -58,13 +58,14 @@ const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
 const CATS = [
   { label:"Air quality monitors",        color:"#2a78d6" },
   { label:"CO detectors",                color:"#1baf7a" },
-  { label:"Radon monitors",              color:"#eda100" },
+  { label:"Radon monitors",              color:"#E040FB" },
   { label:"Formaldehyde monitors",       color:"#4a3aa7" },
   { label:"Purifiers (filter only)",     color:"#898781" },
   { label:"Purifiers (detect+purify)",   color:"#e34948" },
   { label:"CO chronic (low-level)",      color:"#eb6834" },
   { label:"Water leak detectors",        color:"#00BBCC" },
-  { label:"Moen Flo detector",           color:"#FF3B30", flo:true },
+  { label:"Moen Flo detector",           color:"#FFD700", flo:true },
+  { label:"Moen detector concepts",   color:"#FFFFFF", concept:true },
 ];
 
 const products = [
@@ -106,7 +107,19 @@ const products = [
   { name:"YoLink Water Leak Sensor",           lo:15,    hi:17,    cnt:1.4, cat:7 },
   { name:"X-Sense SWS54",                      lo:17,    hi:19,    cnt:0.8, cat:7 },
   { name:"SwitchBot WiFi Water Leak Detector", lo:18,    hi:22,    cnt:0.6, cat:7 },
-  { name:"Moen Flo Detector (MAP $56.36)",     lo:56.36, hi:56.36, cnt:1,  cat:8, flo:true },
+  { name:"Moen Flo Detector (MAP $56.36)",     lo:56.36, hi:56.36, cnt:1.5,  cat:8, flo:true },
+  // ── Moen detector concepts (bold outlined, multi-colored where multi-category)
+  { name:"Moen Concept: VOCs (broad)",                lo:78.72,  hi:78.72,  cnt:0.85, cat:0,          concept:true, cats:[0], trueCnt:1 },
+  { name:"Moen Concept: PM2.5",                       lo:89.91,  hi:89.91,  cnt:0.75, cat:0,          concept:true, cats:[0], trueCnt:1 },
+  { name:"Moen Concept: CO (acute)",                  lo:89.91,  hi:89.91,  cnt:0.60, cat:1,          concept:true, cats:[1], trueCnt:1 },
+  { name:"Moen Concept: Formaldehyde",                lo:89.91,  hi:89.91,  cnt:0.45, cat:3,          concept:true, cats:[3], trueCnt:1 },
+  { name:"Moen Concept: Chronic low-level CO",        lo:112.27, hi:112.27, cnt:0.85, cat:6,          concept:true, cats:[6], trueCnt:1 },
+  { name:"Moen Concept: Radon gas",                   lo:134.64, hi:134.64, cnt:0.85, cat:2,          concept:true, cats:[2], trueCnt:1 },
+  { name:"Moen Concept: VOCs + PM2.5",                lo:101.09, hi:101.09, cnt:2.0, cat:0,          concept:true, cats:[0,0], trueCnt:2 },
+  { name:"Moen Concept: VOCs + PM2.5 + Radon",        lo:168.19, hi:168.19, cnt:3.2, cat:0,          concept:true, cats:[0,2], trueCnt:3 },
+  { name:"Moen Concept: VOCs + PM2.5 + CO (acute)",   lo:134.64, hi:134.64, cnt:3.2, cat:0,          concept:true, cats:[0,1], trueCnt:3 },
+  { name:"Moen Concept: PM2.5 + Formaldehyde",        lo:112.27, hi:112.27, cnt:2.5, cat:3,          concept:true, cats:[0,3], trueCnt:2 },
+  { name:"Moen Concept: PM2.5 + Formaldehyde + VOCs", lo:134.64, hi:134.64, cnt:2.8, cat:3,          concept:true, cats:[0,3], trueCnt:3 },
 ];
 
 const ZOOM = { xMin:0, xMax:80, yMin:0.3, yMax:3.5 };
@@ -157,6 +170,21 @@ function magPy(v) {
   return MAG.plotY1 - (v - ZOOM.yMin) / (ZOOM.yMax - ZOOM.yMin) * (MAG.plotY1 - MAG.plotY0);
 }
 
+// ── Draw a 5-pointed star centered at (cx, cy) with outer radius r
+function drawStar(ctx, cx, cy, r, sf) {
+  const inner = r * 0.42;
+  const points = 5;
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const radius = i % 2 === 0 ? r : inner;
+    const angle = (i * Math.PI / points) - Math.PI / 2;
+    const x = cx + radius * Math.cos(angle);
+    const y = cy + radius * Math.sin(angle);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
 // ── Generic product renderer
 function drawProduct(ctx, p, pxFn, pyFn, hot, sf) {
   sf = sf || 1;
@@ -164,18 +192,74 @@ function drawProduct(ctx, p, pxFn, pyFn, hot, sf) {
   const col = CATS[p.cat].color;
   const isFlo = !!p.flo;
 
-  if (p.lo === p.hi) {
-    const r = (isFlo ? (hot?13:10) : (hot?7:5)) * sf;
-    if (isFlo) {
-      ctx.beginPath(); ctx.arc(xLo, yPx, (r+6*sf), 0, Math.PI*2);
-      ctx.fillStyle = col+"33"; ctx.fill();
-      ctx.beginPath(); ctx.arc(xLo, yPx, (r+3*sf), 0, Math.PI*2);
-      ctx.fillStyle = col+"66"; ctx.fill();
+  if (isFlo) {
+    // Gold star — upright, no overlap
+    const GOLD        = "#FFD700";
+    const GOLD_STROKE = "#B8860B";
+    const r = (hot ? 14 : 11) * sf;
+    // Outer glow
+    ctx.beginPath(); ctx.arc(xLo, yPx, r + 7*sf, 0, Math.PI*2);
+    ctx.fillStyle = GOLD + "22"; ctx.fill();
+    ctx.beginPath(); ctx.arc(xLo, yPx, r + 3*sf, 0, Math.PI*2);
+    ctx.fillStyle = GOLD + "55"; ctx.fill();
+    // Star fill — upright (top point vertical)
+    const inner = r * 0.42;
+    const points = 5;
+    ctx.beginPath();
+    for (let i = 0; i < points * 2; i++) {
+      const radius = i % 2 === 0 ? r : inner;
+      const angle = (i * Math.PI / points) - Math.PI / 2;
+      const x = xLo + radius * Math.cos(angle);
+      const y = yPx + radius * Math.sin(angle);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
+    ctx.closePath();
+    ctx.fillStyle = GOLD;
+    ctx.strokeStyle = GOLD_STROKE;
+    ctx.lineWidth = (hot ? 2 : 1.5) * sf;
+    ctx.fill(); ctx.stroke();
+  } else if (p.concept) {
+    // Concept dot: white fill, multi-color gradient stroke if multi-cat, bold dashed outline
+    const r = (hot ? 9 : 7) * sf;
+    const colors = (p.cats || [p.cat]).map(c => CATS[c].color);
+
+    if (colors.length === 1) {
+      // Single category — solid bold outline in category color
+      ctx.beginPath(); ctx.arc(xLo, yPx, r, 0, Math.PI*2);
+      ctx.fillStyle = isDark ? "#2a2a28" : "#ffffff";
+      ctx.fill();
+      ctx.strokeStyle = colors[0];
+      ctx.lineWidth = (hot ? 3.5 : 2.5) * sf;
+      ctx.setLineDash([3*sf, 2*sf]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      // Multi-category — draw arc segments in each color
+      ctx.beginPath(); ctx.arc(xLo, yPx, r, 0, Math.PI*2);
+      ctx.fillStyle = isDark ? "#2a2a28" : "#ffffff";
+      ctx.fill();
+      const segAngle = (Math.PI * 2) / colors.length;
+      colors.forEach((c, i) => {
+        ctx.beginPath();
+        ctx.arc(xLo, yPx, r, i * segAngle - Math.PI/2, (i+1) * segAngle - Math.PI/2);
+        ctx.strokeStyle = c;
+        ctx.lineWidth = (hot ? 3.5 : 2.5) * sf;
+        ctx.setLineDash([3*sf, 2*sf]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+    }
+    // Inner dot hint
+    ctx.beginPath(); ctx.arc(xLo, yPx, 2.5*sf, 0, Math.PI*2);
+    ctx.fillStyle = colors[0] + "99";
+    ctx.fill();
+
+  } else if (p.lo === p.hi) {
+    const r = (hot ? 7 : 5) * sf;
     ctx.beginPath(); ctx.arc(xLo, yPx, r, 0, Math.PI*2);
-    ctx.fillStyle = hot ? col : col+(isFlo?"FF":"BB");
-    ctx.strokeStyle = isFlo ? "#ffffff" : col;
-    ctx.lineWidth = (isFlo?2:1.5)*sf;
+    ctx.fillStyle = hot ? col : col+"BB";
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.5*sf;
     ctx.fill(); ctx.stroke();
   } else {
     const h=(hot?10:8)*sf, w=Math.max(xHi-xLo, 2);
@@ -197,10 +281,14 @@ function drawTooltip(ctx, p, xMidPx, yPx, canvasW) {
   const lines = [
     {text:p.name,                                           font:"600 13px system-ui,sans-serif", color:fgColor},
     {text:priceStr,                                         font:"500 12px system-ui,sans-serif", color:col},
-    {text:`${p.cnt} substance${p.cnt===1?"":"s"} detected`, font:"400 11px system-ui,sans-serif", color:mutedColor},
+    {text:`${p.trueCnt !== undefined ? p.trueCnt : Math.round(p.cnt)} substance${(p.trueCnt !== undefined ? p.trueCnt : Math.round(p.cnt))===1?"":"s"} detected`, font:"400 11px system-ui,sans-serif", color:mutedColor},
     {text:CATS[p.cat].label,                                font:"400 11px system-ui,sans-serif", color:mutedColor},
   ];
   if (p.flo) lines.splice(2,0,{text:"MAP price",font:"500 10px system-ui,sans-serif",color:col});
+  if (p.concept) {
+    lines[0] = {text: p.name.replace("Moen Concept: ",""), font:"600 13px system-ui,sans-serif", color:fgColor};
+    lines.splice(2,0,{text:"Moen concept · suggested MAP",font:"500 10px system-ui,sans-serif",color:"#888"});
+  }
 
   const pad=12, lineH=18;
   ctx.save();
@@ -440,7 +528,8 @@ function hitMain(mx,my) {
   let closest=null, minScore=Infinity;
   products.forEach(p=>{
     const dy=Math.abs(dataY-p.cnt);
-    if (dy>(p.flo?0.6:0.4)) return;
+    const hitTol = p.flo ? 0.6 : p.concept ? 0.5 : 0.4;
+    if (dy>hitTol) return;
     if (dataX<p.lo-margin||dataX>p.hi+margin) return;
     const score=dy*10+Math.abs(dataX-(p.lo+p.hi)/2)*0.01;
     if (score<minScore){minScore=score;closest=p;}
@@ -473,11 +562,18 @@ requestAnimationFrame(() => { if (chartRef) chartRef.draw(); });
 
 // Legend
 document.getElementById("legend").innerHTML = CATS.map((cat,i)=>{
-  const isFlo=i===8;
-  const sw=isFlo
-    ?`background:${cat.color};border-radius:50%;box-shadow:0 0 5px ${cat.color}88;`
-    :`background:${cat.color};border-radius:3px;`;
-  return `<span class="legend-item"><span class="legend-swatch" style="${sw}"></span>${cat.label}${isFlo?" ★":""}</span>`;
+  const isFlo = i===8;
+  const isConcept = i===9;
+  let icon;
+  if (isFlo) {
+    icon = `<span style="color:#FFD700;font-size:16px;line-height:12px;">★</span>`;
+  } else if (isConcept) {
+    // Small circle with dashed border in white/light
+    icon = `<span style="width:12px;height:12px;border-radius:50%;border:2px dashed #888;background:${isDark?'#2a2a28':'#fff'};flex-shrink:0;display:inline-block;"></span>`;
+  } else {
+    icon = `<span class="legend-swatch" style="background:${cat.color};border-radius:3px;width:12px;height:12px;flex-shrink:0;display:inline-block;"></span>`;
+  }
+  return `<span class="legend-item">${icon}${cat.label}</span>`;
 }).join("");
 </script>
 </body>
