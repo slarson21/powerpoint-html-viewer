@@ -23,13 +23,11 @@
     border: 0.5px solid rgba(11,11,11,0.10);
     padding: 28px 32px 24px;
     width: 100%;
-    max-width: 960px;
+    max-width: 1200px;
     box-shadow: 0 2px 16px rgba(0,0,0,0.06);
   }
-  @media (prefers-color-scheme: dark) {
-    .card { background: #1a1a19; border-color: rgba(255,255,255,0.10); }
-  }
-  .chart-title { font-size: 18px; font-weight: 500; color: #0b0b0b; margin-bottom: 4px; }
+  @media (prefers-color-scheme: dark) { .card { background: #1a1a19; border-color: rgba(255,255,255,0.10); } }
+  .chart-title { font-size: 20px; font-weight: 500; color: #0b0b0b; margin-bottom: 4px; }
   @media (prefers-color-scheme: dark) { .chart-title { color: #ffffff; } }
   .chart-sub { font-size: 13px; color: #52514e; margin-bottom: 20px; }
   @media (prefers-color-scheme: dark) { .chart-sub { color: #898781; } }
@@ -37,20 +35,20 @@
   .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #52514e; }
   @media (prefers-color-scheme: dark) { .legend-item { color: #c3c2b7; } }
   .legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
-  .chart-wrap { position: relative; width: 100%; height: 520px; }
-  #chart { cursor: crosshair; }
+  .chart-wrap { position: relative; width: 100%; height: 680px; }
+  #chart { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
   .note { margin-top: 14px; font-size: 11px; color: #898781; }
 </style>
 </head>
 <body>
 <div class="card">
   <div class="chart-title">Price vs. detected substances — home detector market</div>
-  <div class="chart-sub">34 products &middot; horizontal bars show price ranges &middot; hover a product for details</div>
+  <div class="chart-sub">39 products &middot; horizontal bars show price ranges &middot; hover any point for details &middot; y-axis jittered slightly to separate overlapping products &middot; inset zooms $0–$80 / 1–3 substances region</div>
   <div id="legend"></div>
   <div class="chart-wrap">
-    <canvas id="chart" role="img" aria-label="Scatter chart: 34 home detector and purifier products plotted by price (x-axis) and number of detected substances (y-axis).">34 products plotted by price and substance count.</canvas>
+    <canvas id="chart" role="img" aria-label="Scatter chart of 39 home detector products by price and detected substance count."></canvas>
   </div>
-  <div class="note">Sources: manufacturer listings and retailer pricing. Prices reflect approximate consumer retail mid-2026 and may vary.</div>
+  <div class="note">Sources: manufacturer listings, retailer pricing, and Amazon bestseller data. Prices reflect approximate consumer retail mid-2026. Multi-pack prices divided by unit count. YoLink price excludes hub. &dagger; Moen Flo shown at MAP $56.36.</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
@@ -58,249 +56,429 @@
 const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
 
 const CATS = [
-  { label: "Air quality monitors",      color: "#2a78d6" },
-  { label: "CO detectors",              color: "#1baf7a" },
-  { label: "Radon monitors",            color: "#eda100" },
-  { label: "Formaldehyde monitors",     color: "#4a3aa7" },
-  { label: "Purifiers (filter only)",   color: "#898781" },
-  { label: "Purifiers (detect+purify)", color: "#e34948" },
-  { label: "CO chronic (low-level)",    color: "#eb6834" },
+  { label:"Air quality monitors",        color:"#2a78d6" },
+  { label:"CO detectors",                color:"#1baf7a" },
+  { label:"Radon monitors",              color:"#eda100" },
+  { label:"Formaldehyde monitors",       color:"#4a3aa7" },
+  { label:"Purifiers (filter only)",     color:"#898781" },
+  { label:"Purifiers (detect+purify)",   color:"#e34948" },
+  { label:"CO chronic (low-level)",      color:"#eb6834" },
+  { label:"Water leak detectors",        color:"#00BBCC" },
+  { label:"Moen Flo detector",           color:"#FF3B30", flo:true },
 ];
 
 const products = [
-  { name:"IKEA VINDSTYRKA",                  lo:15,  hi:15,  cnt:4,  cat:0 },
-  { name:"First Alert RD1 test kit",         lo:15,  hi:25,  cnt:1,  cat:2 },
-  { name:"First Alert CO600 Plug-In",        lo:25,  hi:30,  cnt:1,  cat:1 },
-  { name:"First Alert CO710 (10-yr)",        lo:35,  hi:35,  cnt:1,  cat:1 },
-  { name:"X-Sense XC03-W",                   lo:35,  hi:45,  cnt:1,  cat:1 },
-  { name:"GoveeLife Smart AQ Monitor",       lo:40,  hi:40,  cnt:4,  cat:0 },
-  { name:"Defender CA6150",                  lo:40,  hi:50,  cnt:1,  cat:6 },
-  { name:"Kidde Smart Smoke + CO",           lo:50,  hi:60,  cnt:2,  cat:1 },
-  { name:"Forensics Detectors FD-D001",      lo:50,  hi:70,  cnt:1,  cat:6 },
-  { name:"INKBIRD IAQ series",               lo:60,  hi:100, cnt:7,  cat:3 },
-  { name:"Amazon Smart AQ Monitor",          lo:70,  hi:70,  cnt:5,  cat:0 },
-  { name:"Temtop LKC-1000S 2nd",            lo:99,  hi:129, cnt:6,  cat:3 },
-  { name:"Levoit Core 400S",                 lo:100, hi:130, cnt:8,  cat:4 },
-  { name:"Coway Airmega AP-1512HH",          lo:108, hi:200, cnt:7,  cat:4 },
-  { name:"CO Experts PRO-10",                lo:120, hi:150, cnt:1,  cat:6 },
-  { name:"Temtop LKC-1000S+",               lo:129, hi:149, cnt:7,  cat:3 },
-  { name:"Awair Element",                    lo:149, hi:149, cnt:5,  cat:0 },
-  { name:"Temtop M2000 2nd Gen",            lo:149, hi:179, cnt:6,  cat:3 },
-  { name:"Qingping Air Monitor Gen 2",       lo:150, hi:150, cnt:7,  cat:0 },
-  { name:"Blueair Blue Pure 311i Max",       lo:150, hi:200, cnt:7,  cat:4 },
-  { name:"Winix 5510",                       lo:150, hi:200, cnt:8,  cat:4 },
-  { name:"Airthings Corentium Home 2",       lo:159, hi:179, cnt:3,  cat:2 },
-  { name:"Ecosense RadonEye RD200",          lo:179, hi:199, cnt:1,  cat:2 },
-  { name:"Safety Siren Pro4",                lo:179, hi:179, cnt:1,  cat:2 },
-  { name:"Levoit Core 600S",                 lo:200, hi:230, cnt:8,  cat:5 },
-  { name:"PurpleAir Indoor",                 lo:229, hi:229, cnt:7,  cat:0 },
-  { name:"IQAir AirVisual Pro",              lo:249, hi:269, cnt:5,  cat:0 },
-  { name:"TPI 780",                          lo:250, hi:250, cnt:1,  cat:6 },
-  { name:"Airthings View Plus",              lo:329, hi:329, cnt:7,  cat:0 },
-  { name:"Dyson Purifier Hot+Cool HP07",     lo:550, hi:650, cnt:10, cat:5 },
-  { name:"Airthings Renew",                  lo:550, hi:700, cnt:11, cat:5 },
-  { name:"Molekule Air Pro",                 lo:600, hi:800, cnt:6,  cat:5 },
-  { name:"Dyson BP04 Formaldehyde",          lo:700, hi:800, cnt:11, cat:5 },
-  { name:"IQAir HealthPro Plus",             lo:899, hi:999, cnt:10, cat:4 },
+  { name:"IKEA VINDSTYRKA",                    lo:15,    hi:15,    cnt:4,  cat:0 },
+  { name:"First Alert RD1 test kit",           lo:15,    hi:25,    cnt:1.6, cat:2 },
+  { name:"First Alert CO600 Plug-In",          lo:25,    hi:30,    cnt:1.8, cat:1 },
+  { name:"First Alert CO710 (10-yr)",          lo:35,    hi:35,    cnt:1.15, cat:1 },
+  { name:"X-Sense XC03-W",                     lo:35,    hi:45,    cnt:0.85, cat:1 },
+  { name:"GoveeLife Smart AQ Monitor",         lo:40,    hi:40,    cnt:4,  cat:0 },
+  { name:"Defender CA6150",                    lo:40,    hi:50,    cnt:1.15, cat:6 },
+  { name:"Kidde Smart Smoke + CO",             lo:50,    hi:60,    cnt:2,  cat:1 },
+  { name:"Forensics Detectors FD-D001",        lo:50,    hi:70,    cnt:0.85, cat:6 },
+  { name:"INKBIRD IAQ series",                 lo:60,    hi:100,   cnt:7,  cat:3 },
+  { name:"Amazon Smart AQ Monitor",            lo:70,    hi:70,    cnt:5,  cat:0 },
+  { name:"Temtop LKC-1000S 2nd",              lo:99,    hi:129,   cnt:6,  cat:3 },
+  { name:"Levoit Core 400S",                   lo:100,   hi:130,   cnt:8,  cat:4 },
+  { name:"Coway Airmega AP-1512HH",            lo:108,   hi:200,   cnt:7.3, cat:4 },
+  { name:"CO Experts PRO-10",                  lo:120,   hi:150,   cnt:1,  cat:6 },
+  { name:"Temtop LKC-1000S+",                 lo:129,   hi:149,   cnt:6.9, cat:3 },
+  { name:"Awair Element",                      lo:149,   hi:149,   cnt:5,  cat:0 },
+  { name:"Temtop M2000 2nd Gen",              lo:149,   hi:179,   cnt:6,  cat:3 },
+  { name:"Qingping Air Monitor Gen 2",         lo:150,   hi:150,   cnt:7.1, cat:0 },
+  { name:"Blueair Blue Pure 311i Max",         lo:150,   hi:200,   cnt:6.7, cat:4 },
+  { name:"Winix 5510",                         lo:150,   hi:200,   cnt:8.15, cat:4 },
+  { name:"Airthings Corentium Home 2",         lo:159,   hi:179,   cnt:3,  cat:2 },
+  { name:"Ecosense RadonEye RD200",            lo:179,   hi:199,   cnt:1.15, cat:2 },
+  { name:"Safety Siren Pro4",                  lo:179,   hi:179,   cnt:0.85, cat:2 },
+  { name:"Levoit Core 600S",                   lo:200,   hi:230,   cnt:7.85, cat:5 },
+  { name:"PurpleAir Indoor",                   lo:229,   hi:229,   cnt:7,  cat:0 },
+  { name:"IQAir AirVisual Pro",                lo:249,   hi:269,   cnt:5,  cat:0 },
+  { name:"TPI 780",                            lo:250,   hi:250,   cnt:1,  cat:6 },
+  { name:"Airthings View Plus",                lo:329,   hi:329,   cnt:7,  cat:0 },
+  { name:"Dyson Purifier Hot+Cool HP07",       lo:550,   hi:650,   cnt:10, cat:5 },
+  { name:"Airthings Renew",                    lo:550,   hi:700,   cnt:11.2, cat:5 },
+  { name:"Molekule Air Pro",                   lo:600,   hi:800,   cnt:6,  cat:5 },
+  { name:"Dyson BP04 Formaldehyde",            lo:700,   hi:800,   cnt:10.8, cat:5 },
+  { name:"IQAir HealthPro Plus",               lo:899,   hi:999,   cnt:10, cat:4 },
+  { name:"GoveeLife Upgraded Smart WLD",       lo:18,    hi:18,    cnt:1.2, cat:7 },
+  { name:"YoLink Water Leak Sensor",           lo:15,    hi:17,    cnt:1.4, cat:7 },
+  { name:"X-Sense SWS54",                      lo:17,    hi:19,    cnt:0.8, cat:7 },
+  { name:"SwitchBot WiFi Water Leak Detector", lo:18,    hi:22,    cnt:0.6, cat:7 },
+  { name:"Moen Flo Detector (MAP $56.36)",     lo:56.36, hi:56.36, cnt:1,  cat:8, flo:true },
 ];
+
+const ZOOM = { xMin:0, xMax:80, yMin:0.3, yMax:3.5 };
 
 const gridColor   = isDark ? "#2c2c2a" : "#e1e0d9";
 const tickColor   = "#898781";
 const mutedColor  = isDark ? "#c3c2b7" : "#52514e";
 const bgColor     = isDark ? "#1a1a19" : "#ffffff";
+const bgSemi      = isDark ? "#1d1d1cf8" : "#fffffff8";
 const fgColor     = isDark ? "#ffffff" : "#0b0b0b";
 const borderColor = isDark ? "#444441" : "#c3c2b7";
+const arrowColor  = isDark ? "#aaaaaa" : "#555555";
 
 let hoveredProduct = null;
-let chartRef = null;
+let mouseInInset   = false; // true when cursor is over the magnifier inset
+let chartRef       = null;
+let MAG            = null; // computed once chart is ready
 
+// ── Compute inset geometry from live chart scales
+function computeMAG() {
+  if (!chartRef) return null;
+  const { scales:{ x, y }, width } = chartRef;
+  const MARGIN = 14;
+  const PAD_L=48, PAD_B=34, PAD_T=22, PAD_R=10;
+
+  const left   = x.getPixelForValue(310) + MARGIN;
+  const top    = y.getPixelForValue(5.6) + MARGIN;
+  const right  = width - MARGIN;
+  const bottom = y.getPixelForValue(0.5) - MARGIN;
+
+  if (right - left < 50 || bottom - top < 50) return null; // not ready yet
+
+  return {
+    left, top,
+    width:  right  - left,
+    height: bottom - top,
+    plotX0: left + PAD_L,
+    plotX1: right - PAD_R,
+    plotY0: top + PAD_T,
+    plotY1: bottom - PAD_B,
+  };
+}
+
+function magPx(v) {
+  return MAG.plotX0 + (v - ZOOM.xMin) / (ZOOM.xMax - ZOOM.xMin) * (MAG.plotX1 - MAG.plotX0);
+}
+function magPy(v) {
+  return MAG.plotY1 - (v - ZOOM.yMin) / (ZOOM.yMax - ZOOM.yMin) * (MAG.plotY1 - MAG.plotY0);
+}
+
+// ── Generic product renderer
+function drawProduct(ctx, p, pxFn, pyFn, hot, sf) {
+  sf = sf || 1;
+  const xLo = pxFn(p.lo), xHi = pxFn(p.hi), yPx = pyFn(p.cnt);
+  const col = CATS[p.cat].color;
+  const isFlo = !!p.flo;
+
+  if (p.lo === p.hi) {
+    const r = (isFlo ? (hot?13:10) : (hot?7:5)) * sf;
+    if (isFlo) {
+      ctx.beginPath(); ctx.arc(xLo, yPx, (r+6*sf), 0, Math.PI*2);
+      ctx.fillStyle = col+"33"; ctx.fill();
+      ctx.beginPath(); ctx.arc(xLo, yPx, (r+3*sf), 0, Math.PI*2);
+      ctx.fillStyle = col+"66"; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(xLo, yPx, r, 0, Math.PI*2);
+    ctx.fillStyle = hot ? col : col+(isFlo?"FF":"BB");
+    ctx.strokeStyle = isFlo ? "#ffffff" : col;
+    ctx.lineWidth = (isFlo?2:1.5)*sf;
+    ctx.fill(); ctx.stroke();
+  } else {
+    const h=(hot?10:8)*sf, w=Math.max(xHi-xLo, 2);
+    ctx.beginPath(); ctx.roundRect(xLo, yPx-h/2, w, h, 4*sf);
+    ctx.fillStyle = hot ? col+"BB" : col+"66";
+    ctx.strokeStyle = col; ctx.lineWidth = (hot?2:1.5)*sf;
+    ctx.fill(); ctx.stroke();
+    [xLo, xHi].forEach(xv => {
+      ctx.beginPath(); ctx.arc(xv, yPx, (hot?5:4)*sf, 0, Math.PI*2);
+      ctx.fillStyle = col; ctx.fill();
+    });
+  }
+}
+
+// ── Generic tooltip
+function drawTooltip(ctx, p, xMidPx, yPx, canvasW) {
+  const col = CATS[p.cat].color;
+  const priceStr = p.lo===p.hi ? `$${p.lo.toFixed(2)}` : `$${p.lo} \u2013 $${p.hi}`;
+  const lines = [
+    {text:p.name,                                           font:"600 13px system-ui,sans-serif", color:fgColor},
+    {text:priceStr,                                         font:"500 12px system-ui,sans-serif", color:col},
+    {text:`${p.cnt} substance${p.cnt===1?"":"s"} detected`, font:"400 11px system-ui,sans-serif", color:mutedColor},
+    {text:CATS[p.cat].label,                                font:"400 11px system-ui,sans-serif", color:mutedColor},
+  ];
+  if (p.flo) lines.splice(2,0,{text:"MAP price",font:"500 10px system-ui,sans-serif",color:col});
+
+  const pad=12, lineH=18;
+  ctx.save();
+  const maxW = Math.max(...lines.map(l=>{ctx.font=l.font;return ctx.measureText(l.text).width;}));
+  const bw=maxW+pad*2+6, bh=lines.length*lineH+pad*2;
+  let bx=xMidPx-bw/2, by=yPx-bh-20;
+  if (bx<6) bx=6;
+  if (bx+bw>canvasW-6) bx=canvasW-bw-6;
+  if (by<6) by=yPx+20;
+
+  ctx.shadowColor="rgba(0,0,0,0.16)"; ctx.shadowBlur=10; ctx.shadowOffsetY=3;
+  ctx.fillStyle=bgColor; ctx.strokeStyle=p.flo?col:borderColor; ctx.lineWidth=p.flo?1.5:1;
+  ctx.beginPath(); ctx.roundRect(bx,by,bw,bh,8); ctx.fill(); ctx.stroke();
+  ctx.shadowColor="transparent"; ctx.shadowBlur=0;
+  ctx.fillStyle=col; ctx.beginPath(); ctx.roundRect(bx,by,3,bh,[8,0,0,8]); ctx.fill();
+  lines.forEach((l,i)=>{ctx.font=l.font;ctx.fillStyle=l.color;ctx.fillText(l.text,bx+pad+4,by+pad+13+i*lineH);});
+  ctx.restore();
+}
+
+// ── Draw the inset on the main chart canvas
+function drawInset(ctx, chartWidth) {
+  if (!MAG) return;
+  const { left:lx, top:ly, width:lw, height:lh, plotX0, plotX1, plotY0, plotY1 } = MAG;
+
+  ctx.save();
+
+  // Shadow + background
+  ctx.shadowColor="rgba(0,0,0,0.14)"; ctx.shadowBlur=12; ctx.shadowOffsetY=3;
+  ctx.fillStyle=bgSemi;
+  ctx.strokeStyle=isDark?"#555":"#aaa";
+  ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.roundRect(lx,ly,lw,lh,8); ctx.fill(); ctx.stroke();
+  ctx.shadowColor="transparent"; ctx.shadowBlur=0;
+
+  // Clip
+  ctx.beginPath(); ctx.roundRect(lx,ly,lw,lh,8); ctx.clip();
+
+  // Grid
+  ctx.save();
+  ctx.strokeStyle=isDark?"#2c2c2a":"#e4e4de"; ctx.lineWidth=1;
+  for (let yi=1; yi<=3; yi++) {
+    const yp=magPy(yi);
+    ctx.beginPath(); ctx.moveTo(plotX0,yp); ctx.lineTo(plotX1,yp); ctx.stroke();
+  }
+  for (let xi=0; xi<=ZOOM.xMax; xi+=20) {
+    const xp=magPx(xi);
+    ctx.beginPath(); ctx.moveTo(xp,plotY0); ctx.lineTo(xp,plotY1); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Axes
+  ctx.save();
+  ctx.strokeStyle=isDark?"#555":"#b0b0a8"; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(plotX0,plotY0); ctx.lineTo(plotX0,plotY1); ctx.lineTo(plotX1,plotY1); ctx.stroke();
+  ctx.restore();
+
+  // Tick labels
+  ctx.save();
+  ctx.font="10px system-ui,sans-serif"; ctx.fillStyle=tickColor;
+  ctx.textAlign="right"; ctx.textBaseline="middle";
+  for (let yi=1; yi<=3; yi++) ctx.fillText(yi, plotX0-5, magPy(yi));
+  ctx.textAlign="center"; ctx.textBaseline="top";
+  for (let xi=0; xi<=ZOOM.xMax; xi+=20) ctx.fillText(`$${xi}`, magPx(xi), plotY1+5);
+  ctx.restore();
+
+  // Title
+  ctx.save();
+  ctx.font="600 10px system-ui,sans-serif";
+  ctx.fillStyle=isDark?"#c3c2b7":"#52514e";
+  ctx.textAlign="left"; ctx.textBaseline="top";
+  ctx.fillText("🔍  $0–$80  ·  1–3 substances  (y-axis jittered to separate overlapping points)", lx+10, ly+7);
+  ctx.restore();
+
+  // Products strictly inside zoom region (use exact yMin/yMax, not floor/ceil)
+  const inZoom = products.filter(p =>
+    p.hi >= ZOOM.xMin && p.lo <= ZOOM.xMax &&
+    p.cnt >= ZOOM.yMin && p.cnt <= ZOOM.yMax
+  );
+  inZoom.forEach(p => {
+    const hot = hoveredProduct && hoveredProduct.name === p.name;
+    const cp = {...p, lo:Math.max(p.lo,ZOOM.xMin), hi:Math.min(p.hi,ZOOM.xMax)};
+    drawProduct(ctx, cp, magPx, magPy, hot, 1.3);
+  });
+
+  // Tooltip inside inset — only when mouse is currently inside the inset
+  if (hoveredProduct && mouseInInset) {
+    const p = hoveredProduct;
+    const inX = p.hi>=ZOOM.xMin && p.lo<=ZOOM.xMax;
+    const inY = p.cnt>=ZOOM.yMin && p.cnt<=ZOOM.yMax;
+    if (inX && inY) {
+      const cLo=Math.max(p.lo,ZOOM.xMin), cHi=Math.min(p.hi,ZOOM.xMax);
+      drawTooltip(ctx, p, (magPx(cLo)+magPx(cHi))/2, magPy(p.cnt), lx+lw);
+    }
+  }
+
+  ctx.restore();
+}
+
+// ── Plugin
 const barPlugin = {
   id: "priceRangeBar",
+
+  afterRender(chart) {
+    // Fires once after initial render — ensures inset visible without hover
+    if (this._initialDrawDone) return;
+    this._initialDrawDone = true;
+    MAG = computeMAG();
+    if (MAG) requestAnimationFrame(() => chart.draw());
+  },
+
   afterDatasetsDraw(chart) {
-    const { ctx, scales: { x, y } } = chart;
+    const { ctx, scales:{x,y} } = chart;
     ctx.save();
     products.forEach(p => {
-      const xLo  = x.getPixelForValue(p.lo);
-      const xHi  = x.getPixelForValue(p.hi);
-      const yPx  = y.getPixelForValue(p.cnt);
-      const col  = CATS[p.cat].color;
-      const hot  = hoveredProduct && hoveredProduct.name === p.name;
-
-      if (p.lo === p.hi) {
-        ctx.beginPath();
-        ctx.arc(xLo, yPx, hot ? 7 : 5, 0, Math.PI * 2);
-        ctx.fillStyle = hot ? col : col + "BB";
-        ctx.strokeStyle = col;
-        ctx.lineWidth = hot ? 2.5 : 1.5;
-        ctx.fill(); ctx.stroke();
-      } else {
-        const h = hot ? 10 : 8;
-        ctx.beginPath();
-        ctx.roundRect(xLo, yPx - h / 2, Math.max(xHi - xLo, 2), h, 4);
-        ctx.fillStyle = hot ? col + "BB" : col + "66";
-        ctx.strokeStyle = col;
-        ctx.lineWidth = hot ? 2 : 1.5;
-        ctx.fill(); ctx.stroke();
-        [xLo, xHi].forEach(xv => {
-          ctx.beginPath();
-          ctx.arc(xv, yPx, hot ? 5 : 4, 0, Math.PI * 2);
-          ctx.fillStyle = col;
-          ctx.fill();
-        });
-      }
+      const hot = hoveredProduct && hoveredProduct.name === p.name;
+      drawProduct(ctx, p, v=>x.getPixelForValue(v), v=>y.getPixelForValue(v), hot, 1);
     });
     ctx.restore();
   },
 
   afterDraw(chart) {
+    // Always recompute MAG here — scales are guaranteed valid at this point
+    MAG = computeMAG();
+    if (!MAG) return;
+
+    const { ctx, scales:{x,y}, width } = chart;
+
+    // Dashed source box
+    const zx0=x.getPixelForValue(ZOOM.xMin), zx1=x.getPixelForValue(ZOOM.xMax);
+    const zy0=y.getPixelForValue(ZOOM.yMax), zy1=y.getPixelForValue(ZOOM.yMin);
+    ctx.save();
+    ctx.setLineDash([6,4]);
+    ctx.strokeStyle=arrowColor; ctx.lineWidth=1.8;
+    ctx.strokeRect(zx0,zy0,zx1-zx0,zy1-zy0);
+    ctx.setLineDash([]);
+
+    // Straight arrow: top-right corner of dashed box → top-left corner of inset
+    const ax0=zx1, ay0=zy0, ax1=MAG.left, ay1=MAG.top;
+    ctx.strokeStyle=arrowColor; ctx.lineWidth=1.8;
+    ctx.beginPath(); ctx.moveTo(ax0,ay0); ctx.lineTo(ax1,ay1); ctx.stroke();
+
+    // Arrowhead
+    const angle=Math.atan2(ay1-ay0, ax1-ax0);
+    const aLen=10;
+    ctx.fillStyle=arrowColor;
+    ctx.beginPath();
+    ctx.moveTo(ax1,ay1);
+    ctx.lineTo(ax1-aLen*Math.cos(angle-0.38), ay1-aLen*Math.sin(angle-0.38));
+    ctx.lineTo(ax1-aLen*Math.cos(angle+0.38), ay1-aLen*Math.sin(angle+0.38));
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    // Draw inset
+    drawInset(ctx, width);
+
+    // Main chart tooltip — always draw here UNLESS mouse is inside the inset
     if (!hoveredProduct) return;
     const p = hoveredProduct;
-    const { ctx, scales: { x, y }, width } = chart;
-    const xLo  = x.getPixelForValue(p.lo);
-    const xHi  = x.getPixelForValue(p.hi);
-    const xMid = (xLo + xHi) / 2;
-    const yPx  = y.getPixelForValue(p.cnt);
-    const col  = CATS[p.cat].color;
-
-    const priceStr = p.lo === p.hi ? `$${p.lo}` : `$${p.lo} \u2013 $${p.hi}`;
-    const lines = [
-      { text: p.name,                                    font: `600 13px system-ui,sans-serif`, color: fgColor    },
-      { text: priceStr,                                  font: `500 12px system-ui,sans-serif`, color: col        },
-      { text: `${p.cnt} substance${p.cnt===1?"":"s"} detected`, font: `400 11px system-ui,sans-serif`, color: mutedColor },
-      { text: CATS[p.cat].label,                         font: `400 11px system-ui,sans-serif`, color: mutedColor },
-    ];
-
-    const pad = 12, lineH = 18;
-    ctx.save();
-    const maxW = Math.max(...lines.map(l => { ctx.font = l.font; return ctx.measureText(l.text).width; }));
-    const bw = maxW + pad * 2 + 6;
-    const bh = lines.length * lineH + pad * 2;
-
-    let bx = xMid - bw / 2;
-    let by = yPx - bh - 18;
-    if (bx < 6) bx = 6;
-    if (bx + bw > width - 6) bx = width - bw - 6;
-    if (by < 6) by = yPx + 18;
-
-    ctx.shadowColor = "rgba(0,0,0,0.14)";
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetY = 3;
-    ctx.fillStyle = bgColor;
-    ctx.strokeStyle = borderColor;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(bx, by, bw, bh, 8);
-    ctx.fill(); ctx.stroke();
-    ctx.shadowColor = "transparent"; ctx.shadowBlur = 0;
-
-    ctx.fillStyle = col;
-    ctx.beginPath();
-    ctx.roundRect(bx, by, 3, bh, [8, 0, 0, 8]);
-    ctx.fill();
-
-    lines.forEach((line, i) => {
-      ctx.font = line.font;
-      ctx.fillStyle = line.color;
-      ctx.fillText(line.text, bx + pad + 4, by + pad + 13 + i * lineH);
-    });
-    ctx.restore();
+    if (mouseInInset) return; // tooltip drawn inside inset instead
+    const xLo=x.getPixelForValue(p.lo), xHi=x.getPixelForValue(p.hi);
+    drawTooltip(ctx, p, (xLo+xHi)/2, y.getPixelForValue(p.cnt), width);
   }
 };
 
+// ── Create chart
 const canvas = document.getElementById("chart");
 
 chartRef = new Chart(canvas, {
   type: "scatter",
   data: {
-    datasets: CATS.map((cat, ci) => ({
+    datasets: CATS.map((cat,ci) => ({
       label: cat.label,
-      data: products.filter(p => p.cat === ci).map(p => ({ x: (p.lo+p.hi)/2, y: p.cnt })),
-      backgroundColor: "transparent",
-      borderColor: "transparent",
-      pointRadius: 0,
-      pointHoverRadius: 0,
+      data: products.filter(p=>p.cat===ci).map(p=>({x:(p.lo+p.hi)/2,y:p.cnt})),
+      backgroundColor:"transparent", borderColor:"transparent",
+      pointRadius:0, pointHoverRadius:0,
     }))
   },
   options: {
     responsive: true,
     maintainAspectRatio: false,
     animation: false,
-    layout: { padding: { top: 12, right: 24, bottom: 8, left: 8 } },
+    layout: { padding:{top:16,right:24,bottom:8,left:8} },
     scales: {
       x: {
-        type: "linear", min: 0, max: 1060,
-        title: { display: true, text: "Price (USD)", color: mutedColor, font: { size: 12 }, padding: { top: 8 } },
-        ticks: { color: tickColor, font: { size: 11 }, callback: v => `$${v}`, stepSize: 100 },
-        grid: { color: gridColor },
-        border: { color: borderColor }
+        type:"linear", min:0, max:1060,
+        title:{display:true,text:"Price per unit (USD)",color:mutedColor,font:{size:13},padding:{top:8}},
+        ticks:{color:tickColor,font:{size:11},callback:v=>`$${v}`,stepSize:100},
+        grid:{color:gridColor}, border:{color:borderColor}
       },
       y: {
-        min: 0, max: 13,
-        title: { display: true, text: "Number of detected substances", color: mutedColor, font: { size: 12 }, padding: { bottom: 8 } },
-        ticks: { color: tickColor, font: { size: 11 }, stepSize: 1, callback: v => Number.isInteger(v) ? v : "" },
-        grid: { color: gridColor },
-        border: { color: borderColor }
+        min:0, max:12.5,
+        title:{display:true,text:"Number of detected substances",color:mutedColor,font:{size:13},padding:{bottom:8}},
+        ticks:{color:tickColor,font:{size:11},stepSize:1,callback:v=>Number.isInteger(v)?v:""},
+        grid:{color:gridColor}, border:{color:borderColor}
       }
     },
-    plugins: { legend: { display: false }, tooltip: { enabled: false } }
+    plugins:{legend:{display:false},tooltip:{enabled:false}}
   },
-  plugins: [barPlugin]
+  plugins:[barPlugin]
 });
 
-// Use CSS pixel coordinates — getBoundingClientRect gives CSS pixels,
-// and Chart.js scale.getPixelForValue() also returns CSS pixels
-// (Chart.js handles devicePixelRatio internally via its own canvas scaling).
-// So we do NOT multiply by scaleX/scaleY here.
-canvas.addEventListener("mousemove", (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
+// ── Helper: is CSS point inside the inset?
+function insideInset(mx,my) {
+  if (!MAG) return false;
+  return mx>=MAG.left && mx<=MAG.left+MAG.width &&
+         my>=MAG.top  && my<=MAG.top+MAG.height;
+}
 
-  const { scales: { x, y } } = chartRef;
+// ── Hit test inside inset (CSS pixel coords relative to canvas)
+function hitInset(mx,my) {
+  const {plotX0,plotX1,plotY0,plotY1}=MAG;
+  const dataX=ZOOM.xMin+(mx-plotX0)/(plotX1-plotX0)*(ZOOM.xMax-ZOOM.xMin);
+  const dataY=ZOOM.yMin+(plotY1-my)/(plotY1-plotY0)*(ZOOM.yMax-ZOOM.yMin);
+  const pxPerData=(plotX1-plotX0)/(ZOOM.xMax-ZOOM.xMin);
+  const margin=12/pxPerData;
 
-  // Convert mouse CSS px → data value
-  const mouseDataX = x.getValueForPixel(mouseX);
-  const mouseDataY = y.getValueForPixel(mouseY);
-
-  let closest = null;
-  let minScore = Infinity;
-
-  products.forEach(p => {
-    // Distance in data space on y-axis: must be within 0.35 units
-    const dy = Math.abs(mouseDataY - p.cnt);
-    if (dy > 0.4) return;
-
-    // On x-axis: check if mouse is within or near the bar range
-    const margin = (x.getValueForPixel(mouseX + 12) - x.getValueForPixel(mouseX)); // ~12px in data units
-    const inRange = mouseDataX >= (p.lo - margin) && mouseDataX <= (p.hi + margin);
-    if (!inRange) return;
-
-    // Score: prefer closer on y, and closer to midpoint on x
-    const xMid = (p.lo + p.hi) / 2;
-    const dx = Math.abs(mouseDataX - xMid);
-    const score = dy * 10 + dx * 0.01;
-    if (score < minScore) {
-      minScore = score;
-      closest = p;
-    }
+  let closest=null, minScore=Infinity;
+  products.forEach(p=>{
+    if (p.hi<ZOOM.xMin||p.lo>ZOOM.xMax) return;
+    if (p.cnt<Math.floor(ZOOM.yMin)||p.cnt>Math.ceil(ZOOM.yMax)) return;
+    const dy=Math.abs(dataY-p.cnt);
+    if (dy>0.5) return;
+    if (dataX<p.lo-margin||dataX>p.hi+margin) return;
+    const score=dy*10+Math.abs(dataX-(p.lo+p.hi)/2)*0.01;
+    if (score<minScore){minScore=score;closest=p;}
   });
+  return closest;
+}
 
-  if (closest !== hoveredProduct) {
-    hoveredProduct = closest;
+// ── Hit test on main chart (CSS pixel coords)
+function hitMain(mx,my) {
+  const {scales:{x,y}}=chartRef;
+  const dataX=x.getValueForPixel(mx);
+  const dataY=y.getValueForPixel(my);
+  const margin=x.getValueForPixel(mx+14)-x.getValueForPixel(mx);
+
+  let closest=null, minScore=Infinity;
+  products.forEach(p=>{
+    const dy=Math.abs(dataY-p.cnt);
+    if (dy>(p.flo?0.6:0.4)) return;
+    if (dataX<p.lo-margin||dataX>p.hi+margin) return;
+    const score=dy*10+Math.abs(dataX-(p.lo+p.hi)/2)*0.01;
+    if (score<minScore){minScore=score;closest=p;}
+  });
+  return closest;
+}
+
+canvas.addEventListener("mousemove", e => {
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  const nowInInset = insideInset(mx,my);
+  const found = nowInInset ? hitInset(mx,my) : hitMain(mx,my);
+  if (found!==hoveredProduct || nowInInset!==mouseInInset) {
+    hoveredProduct=found;
+    mouseInInset=nowInInset;
     chartRef.draw();
   }
 });
 
 canvas.addEventListener("mouseleave", () => {
-  if (hoveredProduct !== null) {
-    hoveredProduct = null;
+  if (hoveredProduct!==null || mouseInInset) {
+    hoveredProduct=null;
+    mouseInInset=false;
     chartRef.draw();
   }
 });
 
-document.getElementById("legend").innerHTML = CATS.map(cat =>
-  `<span class="legend-item"><span class="legend-swatch" style="background:${cat.color}"></span>${cat.label}</span>`
-).join("");
+// Trigger an initial draw so the inset appears immediately without requiring hover
+requestAnimationFrame(() => { if (chartRef) chartRef.draw(); });
+
+// Legend
+document.getElementById("legend").innerHTML = CATS.map((cat,i)=>{
+  const isFlo=i===8;
+  const sw=isFlo
+    ?`background:${cat.color};border-radius:50%;box-shadow:0 0 5px ${cat.color}88;`
+    :`background:${cat.color};border-radius:3px;`;
+  return `<span class="legend-item"><span class="legend-swatch" style="${sw}"></span>${cat.label}${isFlo?" ★":""}</span>`;
+}).join("");
 </script>
 </body>
 </html>
