@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Detector Market — Detail View ($0–$350 / 0–8 substances)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f2f7f9;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 24px;
+  }
+  @media (prefers-color-scheme: dark) { body { background: #111110; } }
+  .card {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 0.5px solid rgba(11,11,11,0.10);
+    padding: 28px 32px 24px;
+    width: 100%;
+    max-width: 1200px;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+  }
+  @media (prefers-color-scheme: dark) { .card { background: #1a1a19; border-color: rgba(255,255,255,0.10); } }
+  .chart-title { font-size: 20px; font-weight: 500; color: #0b0b0b; margin-bottom: 4px; }
+  @media (prefers-color-scheme: dark) { .chart-title { color: #ffffff; } }
+  .chart-sub { font-size: 13px; color: #52514e; margin-bottom: 20px; }
+  @media (prefers-color-scheme: dark) { .chart-sub { color: #898781; } }
+  #legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 20px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #52514e; }
+  @media (prefers-color-scheme: dark) { .legend-item { color: #c3c2b7; } }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .chart-wrap { position: relative; width: 100%; height: 680px; }
+  #chart { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
+  .note { margin-top: 14px; font-size: 11px; color: #898781; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="chart-title">Price vs. detected substances — detail view ($0–$350)</div>
+  <div class="chart-sub">Products priced $0–$350 &middot; 0–8 detected substances &middot; horizontal bars show price ranges &middot; hover any point for details &middot; y-axis jittered to separate overlapping products &middot; solid-outline circles = Moen concepts &middot; solid-outline diamonds = Moen sensor modules &middot; split colors = multi-substance detection</div>
+  <div id="legend"></div>
+  <div class="chart-wrap">
+    <canvas id="chart" role="img" aria-label="Scatter chart of home detector products priced $0-$350 with up to 8 detected substances."></canvas>
+  </div>
+  <div class="note">Sources: manufacturer listings, retailer pricing, and Amazon bestseller data. Prices reflect approximate consumer retail mid-2026. Multi-pack prices divided by unit count. YoLink price excludes hub. &dagger; Moen Flo shown at MAP $56.36. &ddagger; Moen concept points show suggested MAP; y-axis jittered for readability — hover for true substance count.</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+const CATS = [
+  { label:"Air quality monitors",        color:"#2a78d6" },
+  { label:"CO detectors",                color:"#1baf7a" },
+  { label:"Radon monitors",              color:"#E040FB" },
+  { label:"Formaldehyde monitors",       color:"#4a3aa7" },
+  { label:"Purifiers (filter only)",     color:"#898781" },
+  { label:"Purifiers (detect+purify)",   color:"#e34948" },
+  { label:"CO chronic (low-level)",      color:"#eb6834" },
+  { label:"Water leak detectors",        color:"#00BBCC" },
+  { label:"Moen Flo detector",           color:"#FFD700", flo:true },
+  { label:"Moen detector concepts",      color:"#FFFFFF", concept:true },
+  { label:"Moen sensor modules",          color:"#FFFFFF", module:true },
+];
+
+// All products — filtered to $0-350, 0-8 true substances before plotting
+const ALL_PRODUCTS = [
+  { name:"IKEA VINDSTYRKA",                    lo:15,    hi:15,    cnt:4,    cat:0 },
+  { name:"First Alert RD1 test kit",           lo:15,    hi:25,    cnt:1.6,  cat:2 },
+  { name:"First Alert CO600 Plug-In",          lo:25,    hi:30,    cnt:1.8,  cat:1 },
+  { name:"First Alert CO710 (10-yr)",          lo:35,    hi:35,    cnt:1.15, cat:1 },
+  { name:"X-Sense XC03-W",                     lo:35,    hi:45,    cnt:0.85, cat:1 },
+  { name:"GoveeLife Smart AQ Monitor",         lo:40,    hi:40,    cnt:4,    cat:0 },
+  { name:"Defender CA6150",                    lo:40,    hi:50,    cnt:1.15, cat:6 },
+  { name:"Kidde Smart Smoke + CO",             lo:50,    hi:60,    cnt:2,    cat:1 },
+  { name:"Forensics Detectors FD-D001",        lo:50,    hi:70,    cnt:0.85, cat:6 },
+  { name:"INKBIRD IAQ series",                 lo:60,    hi:100,   cnt:7,    cat:3 },
+  { name:"Amazon Smart AQ Monitor",            lo:70,    hi:70,    cnt:5,    cat:0 },
+  { name:"Temtop LKC-1000S 2nd",              lo:99,    hi:129,   cnt:6,    cat:3 },
+  { name:"Levoit Core 400S",                   lo:100,   hi:130,   cnt:8,    cat:4 },
+  { name:"Coway Airmega AP-1512HH",            lo:108,   hi:200,   cnt:7.3,  cat:4 },
+  { name:"CO Experts PRO-10",                  lo:120,   hi:150,   cnt:1,    cat:6 },
+  { name:"Temtop LKC-1000S+",                 lo:129,   hi:149,   cnt:6.9,  cat:3 },
+  { name:"Awair Element",                      lo:149,   hi:149,   cnt:5,    cat:0 },
+  { name:"Temtop M2000 2nd Gen",              lo:149,   hi:179,   cnt:6,    cat:3 },
+  { name:"Qingping Air Monitor Gen 2",         lo:150,   hi:150,   cnt:7.1,  cat:0 },
+  { name:"Blueair Blue Pure 311i Max",         lo:150,   hi:200,   cnt:6.7,  cat:4 },
+  { name:"Winix 5510",                         lo:150,   hi:200,   cnt:8.15, cat:4 },
+  { name:"Airthings Corentium Home 2",         lo:159,   hi:179,   cnt:3,    cat:2 },
+  { name:"Ecosense RadonEye RD200",            lo:179,   hi:199,   cnt:1.15, cat:2 },
+  { name:"Safety Siren Pro4",                  lo:179,   hi:179,   cnt:0.85, cat:2 },
+  { name:"Levoit Core 600S",                   lo:200,   hi:230,   cnt:7.85, cat:5 },
+  { name:"PurpleAir Indoor",                   lo:229,   hi:229,   cnt:7,    cat:0 },
+  { name:"IQAir AirVisual Pro",                lo:249,   hi:269,   cnt:5,    cat:0 },
+  { name:"TPI 780",                            lo:250,   hi:250,   cnt:1,    cat:6 },
+  { name:"Airthings View Plus",                lo:329,   hi:329,   cnt:7,    cat:0 },
+  { name:"GoveeLife Upgraded Smart WLD",       lo:18,    hi:18,    cnt:1.2,  cat:7 },
+  { name:"YoLink Water Leak Sensor",           lo:15,    hi:17,    cnt:1.4,  cat:7 },
+  { name:"X-Sense SWS54",                      lo:17,    hi:19,    cnt:0.8,  cat:7 },
+  { name:"SwitchBot WiFi Water Leak Detector", lo:18,    hi:22,    cnt:0.6,  cat:7 },
+  { name:"Moen Flo Detector (MAP $56.36)",     lo:56.36, hi:56.36, cnt:1.5,  cat:8, flo:true },
+
+  // ── Moen sensor module concepts (add-on accessories)
+  { name:"Moen Module: VOCs (broad)",                lo:46.08,  hi:69.85,  cnt:-0.20, cat:0, module:true, cats:[0],   trueCnt:1 },
+  { name:"Moen Module: PM2.5",                       lo:57.24,  hi:81.01,  cnt:-0.40, cat:0, module:true, cats:[0],   trueCnt:1 },
+  { name:"Moen Module: CO (acute)",                  lo:57.24,  hi:81.01,  cnt:-0.60, cat:1, module:true, cats:[1],   trueCnt:1 },
+  { name:"Moen Module: Formaldehyde",                lo:57.24,  hi:81.01,  cnt:-0.80, cat:3, module:true, cats:[3],   trueCnt:1 },
+  { name:"Moen Module: Chronic low-level CO",        lo:79.56,  hi:103.33, cnt:-0.20, cat:6, module:true, cats:[6],   trueCnt:1 },
+  { name:"Moen Module: Radon gas",                   lo:101.89, hi:125.65, cnt:-0.40, cat:2, module:true, cats:[2],   trueCnt:1 },
+  { name:"Moen Module: VOCs + PM2.5",               lo:68.40,  hi:92.17,  cnt:2.15,  cat:0, module:true, cats:[0,0], trueCnt:2 },
+  { name:"Moen Module: VOCs + PM2.5 + Radon",       lo:135.37, hi:159.13, cnt:3.50,  cat:0, module:true, cats:[0,2], trueCnt:3 },
+  { name:"Moen Module: VOCs + PM2.5 + CO (acute)",  lo:101.89, hi:125.65, cnt:3.50,  cat:0, module:true, cats:[0,1], trueCnt:3 },
+  { name:"Moen Module: PM2.5 + Formaldehyde",       lo:79.56,  hi:103.33, cnt:2.35,  cat:3, module:true, cats:[0,3], trueCnt:2 },
+  { name:"Moen Module: PM2.5 + Formaldehyde + VOCs",lo:101.89, hi:125.65, cnt:3.70,  cat:3, module:true, cats:[0,3], trueCnt:3 },
+  // Moen concepts
+  { name:"Moen Concept: VOCs (broad)",                lo:78.72,  hi:78.72,  cnt:0.85, cat:0, concept:true, cats:[0],   trueCnt:1 },
+  { name:"Moen Concept: PM2.5",                       lo:89.91,  hi:89.91,  cnt:0.75, cat:0, concept:true, cats:[0],   trueCnt:1 },
+  { name:"Moen Concept: CO (acute)",                  lo:89.91,  hi:89.91,  cnt:0.60, cat:1, concept:true, cats:[1],   trueCnt:1 },
+  { name:"Moen Concept: Formaldehyde",                lo:89.91,  hi:89.91,  cnt:0.45, cat:3, concept:true, cats:[3],   trueCnt:1 },
+  { name:"Moen Concept: Chronic low-level CO",        lo:112.27, hi:112.27, cnt:0.85, cat:6, concept:true, cats:[6],   trueCnt:1 },
+  { name:"Moen Concept: Radon gas",                   lo:134.64, hi:134.64, cnt:0.85, cat:2, concept:true, cats:[2],   trueCnt:1 },
+  { name:"Moen Concept: VOCs + PM2.5",               lo:101.09, hi:101.09, cnt:2.0,  cat:0, concept:true, cats:[0,0], trueCnt:2 },
+  { name:"Moen Concept: VOCs + PM2.5 + Radon",       lo:168.19, hi:168.19, cnt:3.2,  cat:0, concept:true, cats:[0,2], trueCnt:3 },
+  { name:"Moen Concept: VOCs + PM2.5 + CO (acute)",  lo:134.64, hi:134.64, cnt:3.2,  cat:0, concept:true, cats:[0,1], trueCnt:3 },
+  { name:"Moen Concept: PM2.5 + Formaldehyde",       lo:112.27, hi:112.27, cnt:2.5,  cat:3, concept:true, cats:[0,3], trueCnt:2 },
+  { name:"Moen Concept: PM2.5 + Formaldehyde + VOCs",lo:134.64, hi:134.64, cnt:2.8,  cat:3, concept:true, cats:[0,3], trueCnt:3 },
+];
+
+// Filter to detail range: $0-350, true substance count 0-8
+function inRange(p) {
+  const tc = p.trueCnt !== undefined ? p.trueCnt : Math.round(p.cnt);
+  return p.lo <= 350 && tc <= 8;
+  // modules with negative cnt are always included if in price range
+}
+const products = ALL_PRODUCTS.filter(inRange);
+
+const gridColor   = isDark ? "#2c2c2a" : "#e1e0d9";
+const tickColor   = "#898781";
+const mutedColor  = isDark ? "#c3c2b7" : "#52514e";
+const bgColor     = isDark ? "#1a1a19" : "#ffffff";
+const fgColor     = isDark ? "#ffffff" : "#0b0b0b";
+const borderColor = isDark ? "#444441" : "#c3c2b7";
+
+let hoveredProduct = null;
+let chartRef = null;
+
+// ── 5-pointed star
+function drawStar(ctx, cx, cy, r, sf) {
+  const inner = r * 0.42, points = 5;
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const radius = i % 2 === 0 ? r : inner;
+    const angle  = (i * Math.PI / points) - Math.PI / 2;
+    const x = cx + radius * Math.cos(angle);
+    const y = cy + radius * Math.sin(angle);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
+// ── Product renderer
+function drawProduct(ctx, p, pxFn, pyFn, hot, sf) {
+  sf = sf || 1;
+  const xLo = pxFn(p.lo), xHi = pxFn(p.hi), yPx = pyFn(p.cnt);
+  const col = CATS[p.cat].color;
+
+  if (p.flo) {
+    const GOLD = "#FFD700", STROKE = "#B8860B";
+    const r = (hot ? 14 : 11) * sf;
+    ctx.beginPath(); ctx.arc(xLo, yPx, r+7*sf, 0, Math.PI*2);
+    ctx.fillStyle = GOLD+"22"; ctx.fill();
+    ctx.beginPath(); ctx.arc(xLo, yPx, r+3*sf, 0, Math.PI*2);
+    ctx.fillStyle = GOLD+"55"; ctx.fill();
+    drawStar(ctx, xLo, yPx, r, sf);
+    ctx.fillStyle = GOLD; ctx.strokeStyle = STROKE;
+    ctx.lineWidth = (hot?2:1.5)*sf; ctx.fill(); ctx.stroke();
+
+  } else if (p.concept) {
+    // Detector concept: circle, solid outline, vertical color split for multi-cat
+    const r = (hot ? 9 : 7) * sf;
+    const colors = [...new Set((p.cats||[p.cat]).map(c => CATS[c].color))];
+    const lw = (hot?3.5:2.5)*sf;
+    const bg = isDark ? "#2a2a28" : "#ffffff";
+
+    if (colors.length === 1) {
+      // Single color — full solid ring
+      ctx.beginPath(); ctx.arc(xLo, yPx, r, 0, Math.PI*2);
+      ctx.fillStyle = bg; ctx.fill();
+      ctx.strokeStyle = colors[0]; ctx.lineWidth = lw; ctx.stroke();
+    } else {
+      // Multi-color — clip left half / right half vertically
+      // Left half = colors[0], right half = colors[1]
+      ctx.save();
+      // Fill background
+      ctx.beginPath(); ctx.arc(xLo, yPx, r, 0, Math.PI*2);
+      ctx.fillStyle = bg; ctx.fill();
+      // Left arc (π/2 → 3π/2, i.e. left semicircle)
+      ctx.beginPath();
+      ctx.arc(xLo, yPx, r, Math.PI/2, 3*Math.PI/2);
+      ctx.strokeStyle = colors[0]; ctx.lineWidth = lw; ctx.stroke();
+      // Right arc (3π/2 → π/2, i.e. right semicircle)
+      ctx.beginPath();
+      ctx.arc(xLo, yPx, r, 3*Math.PI/2, Math.PI/2);
+      ctx.strokeStyle = colors[1]; ctx.lineWidth = lw; ctx.stroke();
+      // Vertical dividing line
+      ctx.beginPath();
+      ctx.moveTo(xLo, yPx - r); ctx.lineTo(xLo, yPx + r);
+      ctx.strokeStyle = colors[0]; ctx.lineWidth = 1*sf; ctx.stroke();
+      ctx.restore();
+    }
+    // Centre dot
+    ctx.beginPath(); ctx.arc(xLo, yPx, 2.5*sf, 0, Math.PI*2);
+    ctx.fillStyle = colors[0]+"BB"; ctx.fill();
+
+  } else if (p.module && p.lo === p.hi) {
+    // Module single-price: diamond, solid outline, vertical color split
+    const r = (hot?9:7)*sf;
+    const colors = [...new Set((p.cats||[p.cat]).map(c => CATS[c].color))];
+    const lw = (hot?3.5:2.5)*sf;
+    const bg = isDark?"#2a2a28":"#ffffff";
+    const d = r * 0.78; // half-diagonal of the square before rotation
+
+    ctx.save();
+    ctx.translate(xLo, yPx);
+
+    // Draw diamond as a rotated square path (in un-rotated coords)
+    // Diamond points: top(0,-r), right(r,0), bottom(0,r), left(-r,0)
+    const diamondPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(0, -r); ctx.lineTo(r, 0);
+      ctx.lineTo(0, r);  ctx.lineTo(-r, 0);
+      ctx.closePath();
+    };
+
+    // Background fill
+    diamondPath(); ctx.fillStyle=bg; ctx.fill();
+
+    if (colors.length === 1) {
+      diamondPath(); ctx.strokeStyle=colors[0]; ctx.lineWidth=lw; ctx.stroke();
+    } else {
+      // Left half: left(-r,0)→top(0,-r)→ and left(-r,0)→bottom(0,r)
+      ctx.beginPath();
+      ctx.moveTo(0,-r); ctx.lineTo(-r,0); ctx.lineTo(0,r);
+      ctx.strokeStyle=colors[0]; ctx.lineWidth=lw; ctx.stroke();
+      // Right half: top(0,-r)→right(r,0)→bottom(0,r)
+      ctx.beginPath();
+      ctx.moveTo(0,-r); ctx.lineTo(r,0); ctx.lineTo(0,r);
+      ctx.strokeStyle=colors[1]; ctx.lineWidth=lw; ctx.stroke();
+      // Vertical divider
+      ctx.beginPath(); ctx.moveTo(0,-r); ctx.lineTo(0,r);
+      ctx.strokeStyle=colors[0]; ctx.lineWidth=1*sf; ctx.stroke();
+    }
+    ctx.restore();
+    // Centre dot
+    ctx.beginPath(); ctx.arc(xLo,yPx,2.5*sf,0,Math.PI*2);
+    ctx.fillStyle=colors[0]+"BB"; ctx.fill();
+
+  } else if (p.module) {
+    // Module price-range bar: solid outline, vertical color split at midpoint
+    const h=(hot?10:8)*sf, w=Math.max(xHi-xLo,2);
+    const colors=[...new Set((p.cats||[p.cat]).map(c=>CATS[c].color))];
+    const lw=(hot?2.5:2)*sf;
+    const r=4*sf; // corner radius
+    const bg=isDark?"#2a2a28cc":"#ffffffcc";
+    const xMid=xLo+w/2;
+
+    // Background fill
+    ctx.beginPath(); ctx.roundRect(xLo,yPx-h/2,w,h,r);
+    ctx.fillStyle=bg; ctx.fill();
+
+    if (colors.length===1) {
+      ctx.beginPath(); ctx.roundRect(xLo,yPx-h/2,w,h,r);
+      ctx.strokeStyle=colors[0]; ctx.lineWidth=lw; ctx.stroke();
+    } else {
+      // Left half border in colors[0], right half in colors[1]
+      // Draw as two separate path outlines clipped to each half
+      ctx.save();
+      // Left half clip
+      ctx.beginPath(); ctx.rect(xLo-2,yPx-h,xMid-xLo+2,h*2); ctx.clip();
+      ctx.beginPath(); ctx.roundRect(xLo,yPx-h/2,w,h,r);
+      ctx.strokeStyle=colors[0]; ctx.lineWidth=lw; ctx.stroke();
+      ctx.restore();
+      ctx.save();
+      // Right half clip
+      ctx.beginPath(); ctx.rect(xMid,yPx-h,xHi-xMid+2,h*2); ctx.clip();
+      ctx.beginPath(); ctx.roundRect(xLo,yPx-h/2,w,h,r);
+      ctx.strokeStyle=colors[1]; ctx.lineWidth=lw; ctx.stroke();
+      ctx.restore();
+      // Vertical divider at midpoint
+      ctx.beginPath();
+      ctx.moveTo(xMid,yPx-h/2); ctx.lineTo(xMid,yPx+h/2);
+      ctx.strokeStyle=colors[0]; ctx.lineWidth=1*sf; ctx.stroke();
+    }
+    // Diamond end-caps
+    const dr=(hot?5:4)*sf;
+    [xLo,xHi].forEach(xv=>{
+      ctx.save(); ctx.translate(xv,yPx);
+      ctx.beginPath();
+      ctx.moveTo(0,-dr); ctx.lineTo(dr,0); ctx.lineTo(0,dr); ctx.lineTo(-dr,0);
+      ctx.closePath();
+      ctx.fillStyle=colors[xv===xLo?0:colors.length-1];
+      ctx.fill(); ctx.restore();
+    });
+
+  } else if (p.lo === p.hi) {
+    const r = (hot?7:5)*sf;
+    ctx.beginPath(); ctx.arc(xLo, yPx, r, 0, Math.PI*2);
+    ctx.fillStyle = hot ? col : col+"BB";
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5*sf;
+    ctx.fill(); ctx.stroke();
+
+  } else {
+    const h=(hot?10:8)*sf, w=Math.max(xHi-xLo,2);
+    ctx.beginPath(); ctx.roundRect(xLo, yPx-h/2, w, h, 4*sf);
+    ctx.fillStyle = hot?col+"BB":col+"66";
+    ctx.strokeStyle = col; ctx.lineWidth = (hot?2:1.5)*sf;
+    ctx.fill(); ctx.stroke();
+    [xLo,xHi].forEach(xv=>{
+      ctx.beginPath(); ctx.arc(xv,yPx,(hot?5:4)*sf,0,Math.PI*2);
+      ctx.fillStyle=col; ctx.fill();
+    });
+  }
+}
+
+// ── Tooltip
+function drawTooltip(ctx, p, xMidPx, yPx, canvasW) {
+  const col = CATS[p.cat].color;
+  const priceStr = p.lo===p.hi ? `$${p.lo.toFixed(2)}` : `$${p.lo} \u2013 $${p.hi}`;
+  const tc = p.trueCnt !== undefined ? p.trueCnt : Math.round(p.cnt);
+  const displayName = p.concept ? p.name.replace("Moen Concept: ","") : p.module ? p.name.replace("Moen Module: ","") : p.name;
+  const lines = [
+    {text:displayName,                            font:"600 13px system-ui,sans-serif", color:fgColor},
+    {text:priceStr,                               font:"500 12px system-ui,sans-serif", color:col},
+    {text:`${tc} substance${tc===1?"":"s"} detected`, font:"400 11px system-ui,sans-serif", color:mutedColor},
+    {text:CATS[p.cat].label,                      font:"400 11px system-ui,sans-serif", color:mutedColor},
+  ];
+  if (p.flo)     lines.splice(2,0,{text:"MAP price",                   font:"500 10px system-ui,sans-serif",color:col});
+  if (p.concept) lines.splice(2,0,{text:"Moen concept · suggested MAP",font:"500 10px system-ui,sans-serif",color:"#888"});
+  if (p.module)  lines.splice(2,0,{text:"Moen sensor module · suggested MAP",font:"500 10px system-ui,sans-serif",color:"#888"});
+
+  const pad=12, lineH=18;
+  ctx.save();
+  const maxW=Math.max(...lines.map(l=>{ctx.font=l.font;return ctx.measureText(l.text).width;}));
+  const bw=maxW+pad*2+6, bh=lines.length*lineH+pad*2;
+  let bx=xMidPx-bw/2, by=yPx-bh-20;
+  if(bx<6)bx=6; if(bx+bw>canvasW-6)bx=canvasW-bw-6; if(by<6)by=yPx+20;
+
+  ctx.shadowColor="rgba(0,0,0,0.16)"; ctx.shadowBlur=10; ctx.shadowOffsetY=3;
+  ctx.fillStyle=bgColor; ctx.strokeStyle=p.flo?CATS[8].color:borderColor;
+  ctx.lineWidth=p.flo?1.5:1;
+  ctx.beginPath(); ctx.roundRect(bx,by,bw,bh,8); ctx.fill(); ctx.stroke();
+  ctx.shadowColor="transparent"; ctx.shadowBlur=0;
+  ctx.fillStyle=col; ctx.beginPath(); ctx.roundRect(bx,by,3,bh,[8,0,0,8]); ctx.fill();
+  lines.forEach((l,i)=>{ctx.font=l.font;ctx.fillStyle=l.color;ctx.fillText(l.text,bx+pad+4,by+pad+13+i*lineH);});
+  ctx.restore();
+}
+
+// ── Plugin
+const barPlugin = {
+  id:"priceRangeBar",
+
+  beforeDatasetsDraw(chart) {
+    // Draw grey shaded band for the sub-1 jitter zone, below the cnt:1 line
+    const {ctx, scales:{x,y}, width} = chart;
+    const yAt1   = y.getPixelForValue(1);
+    const yAtMin = y.getPixelForValue(y.min);
+    const xLeft  = x.getPixelForValue(x.min);
+    const xRight = x.getPixelForValue(x.max);
+    const bandH  = yAtMin - yAt1;
+
+    ctx.save();
+
+    // Grey band
+    ctx.fillStyle = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.045)";
+    ctx.fillRect(xLeft, yAt1, xRight - xLeft, bandH);
+
+    // Divider rule at cnt:1 — slightly more prominent than a normal gridline
+    ctx.strokeStyle = isDark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.20)";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(xLeft, yAt1);
+    ctx.lineTo(xRight, yAt1);
+    ctx.stroke();
+
+    // Callout label inside the grey band, near left margin
+    const labelX = xLeft + 10;
+    const labelY = yAt1 + (yAtMin - yAt1) * 0.38; // vertically centered in band
+
+    // Pill background
+    const labelText = "All points in this region detect 1 substance  (y-axis jittered for spacing)";
+    ctx.font = "500 10.5px system-ui,sans-serif";
+    const tw = ctx.measureText(labelText).width;
+    const ph = 18, ppad = 8;
+    const px = labelX, py = labelY - ph/2;
+    ctx.fillStyle = isDark ? "rgba(40,40,38,0.85)" : "rgba(255,255,255,0.85)";
+    ctx.beginPath();
+    ctx.roundRect(px, py, tw + ppad*2, ph, 4);
+    ctx.fill();
+
+    // Label text
+    ctx.fillStyle = isDark ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.40)";
+    ctx.fillText(labelText, px + ppad, py + 12.5);
+
+    ctx.restore();
+  },
+
+  afterDatasetsDraw(chart) {
+    const {ctx,scales:{x,y}}=chart;
+    ctx.save();
+    products.forEach(p=>{
+      const hot=hoveredProduct&&hoveredProduct.name===p.name;
+      drawProduct(ctx,p,v=>x.getPixelForValue(v),v=>y.getPixelForValue(v),hot,1);
+    });
+    ctx.restore();
+  },
+  afterDraw(chart) {
+    if(!hoveredProduct)return;
+    const {ctx,scales:{x,y},width}=chart;
+    const p=hoveredProduct;
+    const xLo=x.getPixelForValue(p.lo),xHi=x.getPixelForValue(p.hi);
+    drawTooltip(ctx,p,(xLo+xHi)/2,y.getPixelForValue(p.cnt),width);
+  }
+};
+
+const canvas=document.getElementById("chart");
+
+chartRef=new Chart(canvas,{
+  type:"scatter",
+  data:{
+    datasets:CATS.map((cat,ci)=>({
+      label:cat.label,
+      data:products.filter(p=>p.cat===ci).map(p=>({x:(p.lo+p.hi)/2,y:p.cnt})),
+      backgroundColor:"transparent",borderColor:"transparent",
+      pointRadius:0,pointHoverRadius:0,
+    }))
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,animation:false,
+    layout:{padding:{top:16,right:24,bottom:8,left:8}},
+    scales:{
+      x:{type:"linear",min:0,max:360,
+        title:{display:true,text:"Price per unit (USD)",color:mutedColor,font:{size:13},padding:{top:8}},
+        ticks:{color:tickColor,font:{size:11},callback:v=>`$${v}`,stepSize:50},
+        grid:{color:gridColor},border:{color:borderColor}},
+      y:{min:-1.2,max:9,
+        title:{display:true,text:"Number of detected substances",color:mutedColor,font:{size:13},padding:{bottom:8}},
+        ticks:{color:tickColor,font:{size:11},stepSize:1,callback:v=>(!Number.isInteger(v)||v===0)?"":`${v}`},
+        grid:{color:ctx=>ctx.tick.value===0?"transparent":gridColor},border:{color:borderColor}}
+    },
+    plugins:{legend:{display:false},tooltip:{enabled:false}}
+  },
+  plugins:[barPlugin]
+});
+
+// ── Hit detection
+canvas.addEventListener("mousemove",e=>{
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  const {scales:{x,y}}=chartRef;
+  const dataX=x.getValueForPixel(mx), dataY=y.getValueForPixel(my);
+  const margin=x.getValueForPixel(mx+14)-x.getValueForPixel(mx);
+
+  let closest=null,minScore=Infinity;
+  products.forEach(p=>{
+    const dy=Math.abs(dataY-p.cnt);
+    const tol=p.flo?0.6:p.concept?0.5:p.module?0.5:0.4;
+    if(dy>tol)return;
+    if(dataX<p.lo-margin||dataX>p.hi+margin)return;
+    const score=dy*10+Math.abs(dataX-(p.lo+p.hi)/2)*0.01;
+    if(score<minScore){minScore=score;closest=p;}
+  });
+  if(closest!==hoveredProduct){hoveredProduct=closest;chartRef.draw();}
+});
+
+canvas.addEventListener("mouseleave",()=>{
+  if(hoveredProduct!==null){hoveredProduct=null;chartRef.draw();}
+});
+
+// ── Legend
+document.getElementById("legend").innerHTML=CATS.map((cat,i)=>{
+  const isFlo=i===8, isConcept=i===9, isModule=i===10;
+  let icon;
+  if(isFlo){
+    icon=`<span style="color:#FFD700;font-size:16px;line-height:12px;">★</span>`;
+  } else if(isConcept){
+    icon=`<span style="width:12px;height:12px;border-radius:50%;border:2.5px solid #888;background:${isDark?"#2a2a28":"#fff"};flex-shrink:0;display:inline-block;"></span>`;
+  } else if(isModule){
+    icon=`<span style="width:12px;height:12px;transform:rotate(45deg);border:2.5px solid #888;background:${isDark?"#2a2a28":"#fff"};flex-shrink:0;display:inline-block;"></span>`;
+  } else {
+    icon=`<span class="legend-swatch" style="background:${cat.color};border-radius:3px;width:12px;height:12px;flex-shrink:0;display:inline-block;"></span>`;
+  }
+  return `<span class="legend-item">${icon}${cat.label}</span>`;
+}).join("");
+</script>
+</body>
+</html>
