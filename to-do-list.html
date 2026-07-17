@@ -293,14 +293,21 @@
   .modal-scrim{
     position:fixed;inset:0;background:rgba(20,38,31,.42);backdrop-filter:blur(2px);
     display:flex;align-items:center;justify-content:center;z-index:60;padding:24px;
+    opacity:1;transition:opacity .22s ease;
   }
   .modal-scrim[hidden]{display:none}
+  .modal-scrim.closing,.modal-scrim.opening{opacity:0}
   .modal{
     background:var(--panel);border:1px solid var(--line-strong);border-radius:16px;
     width:min(760px,94vw);max-height:88vh;overflow-y:auto;position:relative;
     box-shadow:0 24px 60px -18px rgba(20,38,31,.5);padding:26px 32px 22px;
     display:flex;flex-direction:column;gap:20px;
+    transform:scale(1);opacity:1;transform-origin:center center;
+    transition:transform .24s cubic-bezier(.34,1.2,.5,1), opacity .18s ease;
   }
+  /* collapse toward a smaller, faded state when opening-in or closing-out */
+  .modal-scrim.opening .modal{transform:scale(.9);opacity:0}
+  .modal-scrim.closing .modal{transform:scale(.85);opacity:0}
   .modal-close{
     position:absolute;top:16px;right:18px;border:none;background:none;
     font-size:24px;line-height:1;color:var(--spent);cursor:pointer;z-index:2;
@@ -2074,6 +2081,7 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
 /* ---------- Detail modal ---------- */
 let openDetailId = null;
 let autosaveTimer = null;
+let closeAnimTimer = null;
 const scrim = document.getElementById('modalScrim');
 const F = {
   title: document.getElementById('modalTitle'),
@@ -2131,7 +2139,12 @@ function openDetail(id){
 
   if(!titleOnly) renderLinks(id);
 
+  // reveal with the opening state, then release on the next frame to animate in
+  clearTimeout(closeAnimTimer);          // cancel a pending close if reopening quickly
+  scrim.classList.remove('closing');
   scrim.hidden = false;
+  scrim.classList.add('opening');
+  requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ scrim.classList.remove('opening'); }); });
   F.title.focus();
 }
 
@@ -2232,10 +2245,16 @@ Object.values(F).forEach(el=>{
 function closeDetail(){
   clearTimeout(autosaveTimer);
   commitDetail(false);   // flush on close so nothing is lost
-  scrim.hidden = true;
   openDetailId = null;
+  // play the collapse animation, then hide once it finishes
+  scrim.classList.add('closing');
+  clearTimeout(closeAnimTimer);
+  closeAnimTimer = setTimeout(()=>{
+    scrim.hidden = true;
+    scrim.classList.remove('closing');
+  }, 240);   // matches the transform transition duration
 }
-document.getElementById('modalSave').addEventListener('click', ()=>{ clearTimeout(autosaveTimer); commitDetail(true); });
+document.getElementById('modalSave').addEventListener('click', ()=>{ clearTimeout(autosaveTimer); closeDetail(); });
 document.getElementById('dRepeat').addEventListener('change', (e)=>{
   if(!openDetailId) return;
   setRepeat(openDetailId, e.target.checked);   // persists + re-renders list/calendar; modal stays open
