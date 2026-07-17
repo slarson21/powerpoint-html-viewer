@@ -168,6 +168,7 @@
   .task .del:hover{color:var(--accent-deep)}
   /* repeating tasks: green left accent; missed-last-week: red tile */
   .task.repeating{border-left-color:var(--sage)}
+  .task.preview{border-left-style:dashed;opacity:.85;background:var(--sage-tint)}
   .task.repeat-missed{border-left-color:#b3402a;background:#fbe9e4}
   .task.repeat-missed .title{color:#8f3320}
   .completed .task{border-left-color:var(--sage);opacity:.8;cursor:default}
@@ -664,6 +665,21 @@ function mondayFromKey(key){
   const [y,mo,da] = key.split('-').map(Number);
   return new Date(y, mo-1, da, 0,0,0,0);
 }
+// the week key for the week directly after the current real week
+function nextWeekKey(){
+  const m = mondayFromKey(currentWeekKey());
+  m.setDate(m.getDate()+7);
+  return weekKey(m);
+}
+// human prefix for a future iteration's title, e.g. "Week of Jul 27... "
+function weekOfPrefix(key){
+  const m = mondayFromKey(key);
+  return 'Week of ' + m.toLocaleDateString(undefined,{month:'short',day:'numeric'}) + '... ';
+}
+// strip a "Week of ...... " prefix if present, to recover a clean base title
+function stripWeekPrefix(title){
+  return (title||'').replace(/^Week of [A-Za-z]{3,} \d{1,2}\.\.\.\s*/, '');
+}
 
 /* ---------- Viewed week (navigation) ----------
    The calendar can show a week other than the real current one, within ±NAV_RANGE.
@@ -840,6 +856,17 @@ function rolloverWeeks(){
       (repeatGroups[t.repeatId] = repeatGroups[t.repeatId] || []).push(t);
       repeatSeen[t.repeatId] = t;   // keep a reference to copy title/details from
     });
+    // Capture the prior week's MOST-RECENT description per template, so a maturing
+    // iteration (scheduled preview or freshly regenerated to-do) inherits it.
+    const repeatDesc = {};   // repeatId -> latest description string from the ending week
+    Object.keys(repeatGroups).forEach(rid=>{
+      // prefer the description on the instance most recently edited/created
+      const withDesc = repeatGroups[rid]
+        .filter(t=>t.details && typeof t.details.description === 'string')
+        .sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+      const latest = withDesc.length ? withDesc[withDesc.length-1] : null;
+      if(latest) repeatDesc[rid] = latest.details.description;
+    });
     const repeatDone = {};   // repeatId -> was it completed last week (per the rule above)
     Object.keys(repeatGroups).forEach(rid=>{
       const group = repeatGroups[rid];
@@ -898,9 +925,31 @@ function rolloverWeeks(){
         };
         // reset a fresh instance's completion detail so it doesn't inherit last week's date
         if(fresh.details){ fresh.details = {...fresh.details, completionDate:''}; }
+        // inherit the prior week's most-recent description explicitly
+        if(rid in repeatDesc){
+          fresh.details = {...(fresh.details||{}), description: repeatDesc[rid]};
+        }
         state.tasks.push(fresh);
       });
     }
+
+    // reconcile previews whose week has now arrived (or passed):
+    //  - a SCHEDULED preview sheds its preview flags, inherits the prior week's most-
+    //    recent description, and stays as a normal tile
+    //  - an unscheduled (to-do) preview is dropped; regeneration makes the real one
+    state.tasks = state.tasks.filter(t=>{
+      if(!t.previewOf) return true;
+      const matured = mondayFromKey(t.futureWeekKey).getTime() <= mondayFromKey(nowKey).getTime();
+      if(!matured) return true;
+      if(t.status==='scheduled'){
+        if(t.previewOf in repeatDesc){
+          t.details = {...(t.details||{}), description: repeatDesc[t.previewOf]};
+        }
+        delete t.previewOf; delete t.futureWeekKey;
+        return true;
+      }
+      return false;   // drop unscheduled matured preview
+    });
 
     state.lastWeekKey = nowKey;
     changed = true;
@@ -931,6 +980,9 @@ function rolloverWeeks(){
       changed = true;
     }
   }
+
+  // keep next week's repeating previews materialized
+  if(ensureNextWeekPreviews()) changed = true;
 
   if(changed) saveSilently();
 }
@@ -1027,6 +1079,7 @@ function setLinks(id, ids){
 }
 // A short label for a task, used in the related-tiles picker and chips.
 function taskLabel(t){
+  if(t.previewOf) return (t.title||'Untitled') + ' · upcoming';
   const where = t.status==='scheduled' ? 'calendar' : (t.status==='completed'?'done':'to-do');
   return (t.title||'Untitled') + ' · ' + where;
 }
@@ -1053,11 +1106,12 @@ function render(){
   document.getElementById('doneCount').textContent = dones().length || "";
 }
 function todos(){
-  // repeating weekly tasks pin to the top (in no particular order among themselves),
-  // then normal tasks by their manual order
+  // ordering: repeating weekly tasks pinned to top, then normal tasks by manual order,
+  // then next-week repeating previews pinned to the very bottom
+  const rank = t => t.previewOf ? 2 : (t.repeatId ? 0 : 1);
   return state.tasks.filter(t=>t.status==='todo').sort((a,b)=>{
-    const ar = a.repeatId?0:1, br = b.repeatId?0:1;
-    if(ar!==br) return ar-br;
+    const ra = rank(a), rb = rank(b);
+    if(ra!==rb) return ra-rb;
     return a.order-b.order;
   });
 }
@@ -1077,12 +1131,14 @@ function renderTodo(){
   items.forEach((t,i)=>{
     const el = document.createElement('div');
     el.className = 'task' + (t.allDay?' allday':'') + (t.isEvent?' event':'')
-      + (t.repeatId?' repeating':'') + (t.repeatMissed?' repeat-missed':'');
+      + (t.repeatId?' repeating':'') + (t.repeatMissed?' repeat-missed':'')
+      + (t.previewOf?' preview':'');
     el.dataset.id = t.id;
     const nLinks = linksOf(t).length;
     const metaBits = [
       t.isEvent?'calendar event':'',
       t.repeatId?'weekly':'',
+      t.previewOf?'upcoming week':'',
       t.allDay?'all-day':'',
       nLinks?`<span class="link-badge" title="${nLinks} related">🔗 ${nLinks}</span>`:''
     ].filter(Boolean).join(' · ');
@@ -1090,8 +1146,8 @@ function renderTodo(){
     const checkbox = t.isEvent
       ? `<span class="cb-spacer"></span>`
       : `<input type="checkbox" class="cb" title="Mark complete">`;
-    // repeat-weekly toggle (not for calendar events)
-    const repeatToggle = t.isEvent ? '' :
+    // repeat-weekly toggle (not for calendar events, not for previews)
+    const repeatToggle = (t.isEvent || t.previewOf) ? '' :
       `<label class="repeat-toggle" title="Repeat weekly"><input type="checkbox" class="rep" ${t.repeatId?'checked':''}> ↻</label>`;
     el.innerHTML = `
       ${checkbox}
@@ -1461,6 +1517,65 @@ function newRepeatId(){ return 'r' + (state.seq++) + '-' + Date.now().toString(3
 function repeatInstances(repeatId){
   return repeatId ? state.tasks.filter(t=>t.repeatId===repeatId) : [];
 }
+
+/* Pre-create next week's iteration of each repeating task so it's visible early
+   (in the to-do list and the link dropdown). Previews are INDEPENDENT tasks:
+   - tagged `previewOf` = the source repeatId, `futureWeekKey` = next week's key
+   - title has the "Week of [Mon]... " prefix baked in (per the chosen design)
+   - not carrying repeatId themselves, so repeat-rollover logic ignores them
+   Refreshed as weeks advance; stale previews (wrong week / template no longer
+   repeating / duplicate) are removed. */
+function ensureNextWeekPreviews(){
+  const nwk = nextWeekKey();
+  let changed = false;
+  // current-week source iteration for each repeat template
+  const sources = {};
+  state.tasks.forEach(t=>{
+    if(t.repeatId && (t.repeatWeekKey||t.weekKey)===currentWeekKey() && !t.previewOf){
+      sources[t.repeatId] = t;
+    }
+  });
+  // remove stale/orphaned previews (todo previews only; a scheduled preview is a
+  // real placement the user made and is left alone even if the template changes)
+  const before = state.tasks.length;
+  state.tasks = state.tasks.filter(t=>{
+    if(!t.previewOf) return true;
+    if(t.status==='scheduled') return true;          // user placed it — keep
+    if(t.futureWeekKey !== nwk) return false;        // old week's preview
+    if(!sources[t.previewOf]) return false;          // template no longer repeats
+    return true;
+  });
+  if(state.tasks.length !== before) changed = true;
+  // ensure exactly one preview per repeating template (scheduled OR todo counts)
+  Object.keys(sources).forEach(rid=>{
+    const src = sources[rid];
+    const existing = state.tasks.find(t=>t.previewOf===rid && t.futureWeekKey===nwk);
+    if(existing){
+      // keep an unscheduled preview's prefixed title synced to the base title
+      if(existing.status==='todo'){
+        const want = weekOfPrefix(nwk) + stripWeekPrefix(src.title);
+        if(existing.title !== want){ existing.title = want; changed = true; }
+      }
+      return;
+    }
+    const preview = {
+      id: uid(),
+      previewOf: rid,
+      futureWeekKey: nwk,
+      title: weekOfPrefix(nwk) + stripWeekPrefix(src.title),
+      allDay: src.allDay, isEvent:false,
+      status:'todo', checked:false, spent:false,
+      order: 100000,                 // sinks to the bottom of the to-do list
+      createdAt: Date.now(),
+      priorityManual: src.priorityManual,
+      details: src.details ? {...src.details, completionDate:''} : undefined,
+      linkedIds: []
+    };
+    state.tasks.push(preview);
+    changed = true;
+  });
+  return changed;
+}
 // Toggle the repeat-weekly flag on a task (and its series siblings, if any).
 function setRepeat(id, on){
   const t = state.tasks.find(x=>x.id===id);
@@ -1476,7 +1591,10 @@ function setRepeat(id, on){
     group.forEach(m=>{ delete m.repeatId; delete m.repeatWeekKey; delete m.completedThisWeek; delete m.repeatMissed; });
     // also stop future regeneration for any other instances of the same template
     if(rid) state.tasks.forEach(m=>{ if(m.repeatId===rid){ delete m.repeatId; delete m.repeatWeekKey; delete m.completedThisWeek; delete m.repeatMissed; } });
+    // remove any pre-created next-week preview for this template
+    if(rid) state.tasks = state.tasks.filter(m=>m.previewOf!==rid);
   }
+  ensureNextWeekPreviews();   // materialize/refresh next week's preview right away
   save(); render();
 }
 
@@ -1896,7 +2014,7 @@ todoListEl.addEventListener('drop', (e)=>{
 
 /* ---------- CSV export / import (merge, dedup by id) ---------- */
 function toCSV(){
-  const cols = ['id','title','allDay','isEvent','status','dayIndex','startSlot','lenSlots','checked','spent','childId','shadowOf','order','weekKey','returned','createdAt','priorityManual','seriesId','completedAt','repeatId','repeatWeekKey','completedThisWeek','repeatMissed','linkedIds','details'];
+  const cols = ['id','title','allDay','isEvent','status','dayIndex','startSlot','lenSlots','checked','spent','childId','shadowOf','order','weekKey','returned','createdAt','priorityManual','seriesId','completedAt','repeatId','repeatWeekKey','completedThisWeek','repeatMissed','previewOf','futureWeekKey','linkedIds','details'];
   const esc = v => {
     if(v===undefined||v===null) return '';
     const s = (typeof v==='object') ? JSON.stringify(v) : String(v);
