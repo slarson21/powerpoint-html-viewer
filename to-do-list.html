@@ -175,7 +175,20 @@
   /* ---------- Calendar ---------- */
   main{overflow:auto;padding:22px 24px}
   .cal-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:14px;gap:16px;flex-wrap:wrap}
-  .cal-head h2{margin:0;font-size:20px;font-weight:600}
+  .cal-head h2{margin:0;font-size:20px;font-weight:600;min-width:96px}
+  .week-nav{display:flex;align-items:center;gap:8px}
+  .wk-btn{
+    border:1px solid var(--line-strong);background:#fff;color:var(--ink);
+    width:30px;height:30px;border-radius:8px;font-size:18px;line-height:1;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.12s;
+  }
+  .wk-btn:hover:not(:disabled){border-color:var(--sage);color:var(--sage)}
+  .wk-btn:disabled{opacity:.35;cursor:not-allowed}
+  .wk-today{
+    border:1px solid var(--sage);background:var(--sage);color:#fff;
+    font:inherit;font-size:12px;padding:5px 11px;border-radius:8px;cursor:pointer;margin-left:2px;
+  }
+  .wk-today:hover{background:#4a6b56;border-color:#4a6b56}
   .cal-head .range{font-size:13px;color:var(--ink-soft)}
   .legend{display:flex;gap:16px;font-size:11.5px;color:var(--ink-soft);align-items:center}
   .legend span{display:inline-flex;align-items:center;gap:6px}
@@ -219,11 +232,19 @@
 
   /* Scheduled blocks */
   .block{
-    position:absolute;left:3px;right:3px;border-radius:7px;
+    position:absolute;left:3px;border-radius:7px;
     background:#fff;border:1px solid var(--line-strong);border-left:3px solid var(--accent);
     padding:4px 6px 4px 7px;font-size:12px;overflow:hidden;box-shadow:var(--shadow);
     display:flex;flex-direction:column;gap:2px;cursor:grab;z-index:2;
   }
+  .now-bar{
+    position:absolute;left:0;right:0;height:0;border-top:2px solid #c0392b;z-index:5;pointer-events:none;
+  }
+  .now-bar .now-dot{
+    position:absolute;left:-1px;top:-5px;width:8px;height:8px;border-radius:50%;background:#c0392b;
+  }
+  .block.dragging{opacity:.85;box-shadow:0 12px 28px -8px rgba(20,38,31,.5);cursor:grabbing;z-index:20}
+  body.dragging-block{user-select:none;-webkit-user-select:none;cursor:grabbing}
   .block.allday{border-left-color:var(--gold);background:#fffdf5;z-index:1}
   .block.spent{background:var(--spent-bg);border-color:var(--line);border-left-color:var(--spent);color:var(--spent);z-index:1}
   .block.spent .b-title{color:var(--spent)}
@@ -243,7 +264,7 @@
   }
   .resize::after{content:"";position:absolute;left:50%;bottom:2px;transform:translateX(-50%);
     width:20px;height:2px;border-radius:2px;background:var(--line-strong)}
-  .block.spent .resize{display:none}
+  .block.spent .resize{opacity:.5}
 
   /* expand icon shared by all item types */
   .expand{
@@ -399,7 +420,12 @@
   <main>
     <div class="cal-head">
       <div>
-        <h2>This week</h2>
+        <div class="week-nav">
+          <button class="wk-btn" id="weekPrev" title="Previous week">‹</button>
+          <h2 id="calWeekLabel">This week</h2>
+          <button class="wk-btn" id="weekNext" title="Next week">›</button>
+          <button class="wk-today" id="weekToday" title="Back to this week">Today</button>
+        </div>
         <div class="range" id="weekRange"></div>
       </div>
       <div class="legend">
@@ -619,8 +645,32 @@ function mondayFromKey(key){
   const [y,mo,da] = key.split('-').map(Number);
   return new Date(y, mo-1, da, 0,0,0,0);
 }
-function weekDates(){
-  const mon = mondayOf(new Date());
+
+/* ---------- Viewed week (navigation) ----------
+   The calendar can show a week other than the real current one, within ±NAV_RANGE.
+   Rendering/placement use the VIEWED week; time-based logic (overdue, rollover)
+   stays anchored to the real current week. */
+const NAV_RANGE = 4;               // weeks navigable in each direction
+let viewWeekKey = null;            // set on boot to the current week
+function viewedWeekKey(){ return viewWeekKey || currentWeekKey(); }
+// how many weeks the viewed week is offset from the real current week (0 = current)
+function viewOffsetWeeks(){
+  const a = mondayFromKey(currentWeekKey()).getTime();
+  const b = mondayFromKey(viewedWeekKey()).getTime();
+  return Math.round((b - a) / (7*86400000));
+}
+function shiftViewedWeek(delta){
+  const next = viewOffsetWeeks() + delta;
+  if(next < -NAV_RANGE || next > NAV_RANGE) return;   // clamp to ±NAV_RANGE
+  const mon = mondayFromKey(viewedWeekKey());
+  mon.setDate(mon.getDate() + delta*7);
+  viewWeekKey = weekKey(mon);
+  render();
+}
+function goToCurrentWeek(){ viewWeekKey = currentWeekKey(); render(); }
+
+function weekDates(wk){
+  const mon = wk ? mondayFromKey(wk) : mondayOf(new Date());
   return Array.from({length:5}, (_,i)=>{
     const d = new Date(mon); d.setDate(mon.getDate()+i); return d;
   });
@@ -716,12 +766,23 @@ function lastInstance(seriesId){
   }, null);
 }
 // Propagate shared fields from one instance to its siblings.
+// Covers series members (same seriesId) AND — for a repeating task — every current
+// instance sharing the same repeatId, so a description edit reaches all copies
+// regardless of whether they were grouped by copy/paste or by weekly repetition.
 function syncSeriesShared(src){
-  if(!src.seriesId) return;
-  seriesMembers(src.seriesId).forEach(m=>{
+  const targets = new Set();
+  if(src.seriesId) seriesMembers(src.seriesId).forEach(m=>targets.add(m));
+  if(src.repeatId) repeatInstances(src.repeatId).forEach(m=>targets.add(m));
+  targets.forEach(m=>{
     if(m.id===src.id) return;
     m.title = src.title;
-    m.details = src.details ? {...src.details} : undefined;
+    // copy shared detail fields but preserve each instance's own completion date
+    if(src.details){
+      const keepCompletion = m.details ? m.details.completionDate : '';
+      m.details = {...src.details, completionDate: keepCompletion || ''};
+    } else {
+      m.details = undefined;
+    }
     m.createdAt = src.createdAt;
     m.priorityManual = src.priorityManual;
     m.linkedIds = [...(src.linkedIds||[])];
@@ -1057,7 +1118,8 @@ function renderDone(){
 }
 
 function renderCalendar(){
-  const dates = weekDates();
+  const vk = viewedWeekKey();
+  const dates = weekDates(vk);
   const todayStr = new Date().toDateString();
   grid.innerHTML = "";
 
@@ -1083,6 +1145,7 @@ function renderCalendar(){
   grid.appendChild(tc);
 
   // day columns
+  const nowDate = new Date();
   dates.forEach((d,dayIndex)=>{
     const isToday = d.toDateString()===todayStr;
     const col = cell('day-col'+(isToday?' today':''));
@@ -1093,21 +1156,39 @@ function renderCalendar(){
       slot.dataset.slot = s;
       col.appendChild(slot);
     }
-    // blocks — only the current week is ever shown
-    scheduled().filter(t=>t.dayIndex===dayIndex && t.weekKey===currentWeekKey()).forEach(t=>{
-      col.appendChild(makeBlock(t));
+    // blocks for the VIEWED week, laid out in vertical columns when they overlap
+    const dayBlocks = scheduled().filter(t=>t.dayIndex===dayIndex && t.weekKey===vk);
+    const layout = layoutOverlaps(dayBlocks);
+    dayBlocks.forEach(t=>{
+      const lay = layout[t.id] || {col:0, cols:1};
+      col.appendChild(makeBlock(t, lay));
     });
+    // current-time bar on today's column
+    if(isToday){
+      const minsNow = nowDate.getHours()*60 + nowDate.getMinutes();
+      const dayStartMin = DAY_START*60, dayEndMin = DAY_END*60;
+      if(minsNow >= dayStartMin && minsNow <= dayEndMin){
+        const y = ((minsNow - dayStartMin)/STEP_MIN) * SLOT_PX;
+        const bar = document.createElement('div');
+        bar.className = 'now-bar';
+        bar.style.top = y + 'px';
+        bar.innerHTML = '<span class="now-dot"></span>';
+        col.appendChild(bar);
+      }
+    }
     attachDrop(col, dayIndex);
     // right-click empty space in a day column -> Paste menu (if a block was copied)
     col.addEventListener('contextmenu', (e)=>{
       if(e.target.closest('.block')) return;   // block's own menu handles this
       e.preventDefault();
+      suppressNextColClick = true;             // don't let the trailing click reopen a different menu
       const slot = slotFromEvent(col, e);
       showPasteMenu(e.clientX, e.clientY, dayIndex, slot);
     });
     // left-click empty space in a day column -> menu to create a calendar event here
     col.addEventListener('click', (e)=>{
       if(e.target.closest('.block')) return;   // clicks on a block/its controls are handled there
+      if(suppressNextColClick){ suppressNextColClick = false; return; }  // a paste menu just opened
       e.stopPropagation();                     // don't let the global closer dismiss the menu we're opening
       const slot = slotFromEvent(col, e);
       showSlotMenu(e.clientX, e.clientY, dayIndex, slot);
@@ -1115,16 +1196,69 @@ function renderCalendar(){
     grid.appendChild(col);
   });
 
+  const off = viewOffsetWeeks();
+  const label = off===0 ? 'This week' : (off===-1?'Last week':(off===1?'Next week':(off<0?`${-off} weeks ago`:`In ${off} weeks`)));
+  document.getElementById('calWeekLabel').textContent = label;
   document.getElementById('weekRange').textContent =
     dates[0].toLocaleDateString(undefined,{month:'long',day:'numeric'}) + " – " +
     dates[4].toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'});
+  // disable nav buttons at the range limits
+  document.getElementById('weekPrev').disabled = (off <= -NAV_RANGE);
+  document.getElementById('weekNext').disabled = (off >=  NAV_RANGE);
+  document.getElementById('weekToday').style.display = (off===0 ? 'none' : '');
 }
 
-function makeBlock(t){
+/* Assign each block in a day a column index + column count so overlapping blocks
+   split the width vertically (side by side). Returns { [id]: {col, cols} }.
+   Blocks that share any time overlap form a cluster; the cluster's max concurrency
+   sets how many columns they divide into. */
+function layoutOverlaps(blocks){
+  const result = {};
+  if(!blocks.length) return result;
+  // sort by start, then by end
+  const sorted = [...blocks].sort((a,b)=> (a.startSlot-b.startSlot) || (a.lenSlots-b.lenSlots));
+  const overlaps = (a,b)=> a.startSlot < (b.startSlot+b.lenSlots) && b.startSlot < (a.startSlot+a.lenSlots);
+
+  let cluster = [];         // current set of mutually-connected blocks
+  let clusterEnd = -1;      // latest end slot in the cluster
+  const flush = ()=>{
+    if(!cluster.length) return;
+    // greedy column assignment within the cluster
+    const cols = [];        // cols[i] = end slot of last block placed in column i
+    cluster.forEach(blk=>{
+      let placed = false;
+      for(let i=0;i<cols.length;i++){
+        if(blk.startSlot >= cols[i]){ result[blk.id]={col:i}; cols[i]=blk.startSlot+blk.lenSlots; placed=true; break; }
+      }
+      if(!placed){ result[blk.id]={col:cols.length}; cols.push(blk.startSlot+blk.lenSlots); }
+    });
+    const total = cols.length;
+    cluster.forEach(blk=>{ result[blk.id].cols = total; });
+    cluster = []; clusterEnd = -1;
+  };
+  sorted.forEach(blk=>{
+    if(cluster.length && blk.startSlot >= clusterEnd){ flush(); }  // no overlap with cluster -> new cluster
+    cluster.push(blk);
+    clusterEnd = Math.max(clusterEnd, blk.startSlot + blk.lenSlots);
+  });
+  flush();
+  return result;
+}
+
+function makeBlock(t, lay){
   const b = document.createElement('div');
   b.className='block'+(t.allDay?' allday':'')+(t.spent?' spent':'')+(t.checked?' checked':'')+(isSeries(t)?' series':'')+(t.isEvent?' event':'')+(t.repeatId?' repeating':'');
   b.style.top = (t.startSlot*SLOT_PX)+'px';
   b.style.height = (t.lenSlots*SLOT_PX - 2)+'px';
+  // horizontal position: split the column width when overlapping (lay.cols > 1)
+  const cols = (lay && lay.cols) ? lay.cols : 1;
+  const ci = (lay && lay.col) ? lay.col : 0;
+  const gap = 2;           // px gap between side-by-side blocks
+  const leftPct = (ci / cols) * 100;
+  const widthPct = (1 / cols) * 100;
+  b.style.left = `calc(${leftPct}% + 3px)`;
+  b.style.right = 'auto';
+  b.style.width = `calc(${widthPct}% - ${3 + gap}px)`;
   b.dataset.id = t.id;
   const badges =
     (t.isEvent?`<span class="event-badge" title="Calendar event">◇ event</span>`:'') +
@@ -1165,9 +1299,7 @@ function makeBlock(t){
     showBlockMenu(e.clientX, e.clientY, t);
   });
   enableBlockDrag(b, t);          // spent blocks are draggable too, to reschedule
-  if(!t.spent){
-    enableResize(b, t);           // only live blocks can be resized
-  }
+  enableResize(b, t);             // durations are editable even after the time has passed
   return b;
 }
 
@@ -1175,6 +1307,9 @@ function cell(cls){ const d=document.createElement('div'); d.className=cls; retu
 
 /* ---------- Drop from to-do list onto a day column ---------- */
 let dragTaskId = null;   // id currently being dragged from the list
+let seriesClipboardId = null;   // id of the block right-click-copied for series paste
+let suppressNextColClick = false;   // true briefly after a right-click, so the trailing click is ignored
+let blockDragging = false;   // true while a calendar block is being pointer-dragged
 
 function attachDrop(col, dayIndex){
   col.addEventListener('dragover', (e)=>{
@@ -1223,21 +1358,10 @@ function clearHighlight(col){
   col.querySelectorAll('.slot').forEach(s=>s.classList.remove('drop-ok','drop-bad'));
 }
 
-/* Collision rule: normal items cannot overlap other NORMAL items.
-   All-day (background) items may overlap freely and don't block others.
-   `ignoreId` excludes the block currently being repositioned from its own check. */
+/* Overlap is now allowed for all tiles (they split into vertical columns), so the
+   only placement constraint is fitting within the day's time range. */
 function placementOK(dayIndex, start, len, isAllDay, ignoreId){
-  if(start+len > TOTAL_SLOTS) return false;
-  if(isAllDay) return true;
-  const clash = scheduled().some(t=>{
-    if(t.id===ignoreId) return false;     // don't collide with self when moving
-    if(t.weekKey !== currentWeekKey()) return false;  // only current-week blocks collide
-    if(t.dayIndex!==dayIndex) return false;
-    if(t.allDay) return false;            // background items don't block
-    const a0=t.startSlot, a1=t.startSlot+t.lenSlots;
-    return start < a1 && (start+len) > a0;
-  });
-  return !clash;
+  return start >= 0 && (start + len) <= TOTAL_SLOTS;
 }
 
 function placeTask(id, dayIndex, slot, len){
@@ -1256,7 +1380,7 @@ function placeTask(id, dayIndex, slot, len){
   t.status='scheduled';
   t.dayIndex=dayIndex; t.startSlot=slot; t.lenSlots=len;
   t.spent=false; t.checked=false;
-  t.weekKey=currentWeekKey();   // pin block to the week it was placed in
+  t.weekKey=viewedWeekKey();   // pin block to the week currently being viewed
   // autopopulate priority from scheduling latency (unless user overrode it)
   ensureDetails(t);
   if(!t.priorityManual){
@@ -1368,7 +1492,7 @@ function createEventAt(dayIndex, slot){
     isEvent: true,
     status:'scheduled',
     dayIndex, startSlot: slot, lenSlots: len,
-    weekKey: currentWeekKey(),
+    weekKey: viewedWeekKey(),
     checked:false, spent:false,
     createdAt: Date.now(),
     priorityManual: false,
@@ -1398,14 +1522,14 @@ function pasteSeriesInstance(dayIndex, slot){
     title: src.title, allDay: src.allDay, isEvent: src.isEvent,
     status:'scheduled',
     dayIndex, startSlot: slot, lenSlots: len,
-    weekKey: currentWeekKey(),
+    weekKey: viewedWeekKey(),
     checked:false, spent:false,
     createdAt: src.createdAt,
     priorityManual: src.priorityManual,
     details: src.details ? {...src.details} : undefined,
     linkedIds: [...(src.linkedIds||[])],
     repeatId: src.repeatId,                         // stays part of the repeat template
-    repeatWeekKey: src.repeatId ? currentWeekKey() : undefined
+    repeatWeekKey: src.repeatId ? viewedWeekKey() : undefined
   };
   state.tasks.push(inst);
   // keep links symmetric for the new instance
@@ -1461,18 +1585,108 @@ document.addEventListener('keydown', (e)=>{
   undo();
 });
 
-/* ---------- Move an existing block (re-drag / reschedule) ---------- */
+/* ---------- Move an existing block (pointer-based drag, 1:1 with cursor) ---------- */
 function enableBlockDrag(b, t){
-  b.setAttribute('draggable','true');
-  b.addEventListener('dragstart', (e)=>{
-    // never start a reposition from the checkbox, resize handle, or delete button
-    if(b.dataset.resizing==='1' || e.target.classList.contains('resize') || e.target.classList.contains('cb') || e.target.classList.contains('b-del') || e.target.classList.contains('b-exp')){
-      e.preventDefault(); return;
-    }
-    dragTaskId = t.id;
-    b.classList.add('drag-ghost');
+  b.addEventListener('pointerdown', (e)=>{
+    if(e.button!==0) return;   // left button only
+    if(b.dataset.resizing==='1' || e.target.classList.contains('resize') ||
+       e.target.classList.contains('cb') || e.target.classList.contains('b-del') ||
+       e.target.classList.contains('b-exp')) return;
+
+    const grid = document.getElementById('grid');
+    const startX = e.clientX, startY = e.clientY;
+    let moved = false;
+    let cols = [];
+    let lastCol = null;          // currently highlighted column, so we only clear that one
+    let rafId = null;
+    let lastEv = null;
+    const rect = b.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+    const offsetY = e.clientY - rect.top;
+    const width = rect.width;
+
+    const snapshotCols = ()=>{
+      cols = [...grid.querySelectorAll('.day-col')].map(c=>({el:c, day:Number(c.dataset.day), rect:c.getBoundingClientRect()}));
+    };
+
+    const paint = ()=>{
+      rafId = null;
+      const ev = lastEv;
+      if(!ev) return;
+      // follow cursor
+      b.style.left = (ev.clientX - offsetX)+'px';
+      b.style.top  = (ev.clientY - offsetY)+'px';
+      // highlight target slot; only touch columns whose highlight changes
+      const col = cols.find(c=> ev.clientX >= c.rect.left && ev.clientX <= c.rect.right) || null;
+      if(lastCol && lastCol!==col) clearHighlight(lastCol.el);
+      if(col){
+        clearHighlight(col.el);
+        let slot = Math.round((ev.clientY - offsetY - col.rect.top)/SLOT_PX);
+        slot = Math.max(0, Math.min(TOTAL_SLOTS - t.lenSlots, slot));
+        highlightSlots(col.el, slot, t.lenSlots, true);
+      }
+      lastCol = col;
+    };
+
+    const onMove = (ev)=>{
+      if(!moved){
+        if(Math.abs(ev.clientX-startX)<4 && Math.abs(ev.clientY-startY)<4) return;
+        moved = true;
+        blockDragging = true;
+        document.body.classList.add('dragging-block');   // suppress text selection during drag
+        if(window.getSelection){ const s=window.getSelection(); if(s) s.removeAllRanges(); }
+        snapshotCols();
+        b.classList.add('dragging');
+        b.style.pointerEvents = 'none';
+        b.style.position = 'fixed';
+        b.style.margin = '0';
+        b.style.width = width+'px';
+        b.style.right = 'auto';
+      }
+      lastEv = ev;
+      if(rafId===null) rafId = requestAnimationFrame(paint);   // throttle to one paint per frame
+    };
+
+    const finish = (ev)=>{
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', finish);
+      document.removeEventListener('pointercancel', finish);
+      document.body.classList.remove('dragging-block');   // restore normal text selection
+      if(rafId!==null){ cancelAnimationFrame(rafId); rafId=null; }
+      if(!moved){ blockDragging=false; return; }   // it was a click
+      // clear any highlight
+      cols.forEach(c=>clearHighlight(c.el));
+      const col = cols.find(c=> ev.clientX >= c.rect.left && ev.clientX <= c.rect.right) || null;
+      blockDragging = false;
+      if(col){
+        let slot = Math.round((ev.clientY - offsetY - col.rect.top)/SLOT_PX);
+        slot = Math.max(0, Math.min(TOTAL_SLOTS - t.lenSlots, slot));
+        placeTaskAt(t.id, col.day, slot, t.lenSlots);
+      } else {
+        const listEl = document.getElementById('todoList');
+        const lr = listEl.getBoundingClientRect();
+        if(ev.clientX>=lr.left && ev.clientX<=lr.right && ev.clientY>=lr.top && ev.clientY<=lr.bottom){
+          unscheduleTask(t.id);
+        } else {
+          render();   // snap back to its stored position
+        }
+      }
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', finish);
+    document.addEventListener('pointercancel', finish);   // stylus/touch interruptions
   });
-  b.addEventListener('dragend', ()=>{ b.classList.remove('drag-ghost'); dragTaskId=null; });
+}
+// Reposition an existing scheduled block to a new day/slot on the viewed week.
+function placeTaskAt(id, dayIndex, slot, len){
+  const t = state.tasks.find(x=>x.id===id);
+  if(!t) return;
+  t.dayIndex = dayIndex;
+  t.startSlot = slot;
+  t.lenSlots = len;
+  t.weekKey = viewedWeekKey();
+  save(); render();
 }
 
 /* ---------- Resize (bottom edge, live 15-min snap, Pointer Events) ---------- */
@@ -1898,7 +2112,7 @@ function readIntoTask(){
     if(t.childId){ const c=state.tasks.find(x=>x.id===t.childId); if(c) c.title=newTitle; }
   }
   if(t.isEvent && !eventsAreTasky()){    // title-only event: nothing else to save
-    if(t.seriesId) syncSeriesShared(t);
+    if(t.seriesId || t.repeatId) syncSeriesShared(t);
     return t;
   }
   const d = ensureDetails(t);
@@ -1910,7 +2124,7 @@ function readIntoTask(){
   d.link          = F.link.value;
   // For tasky events, Completion Date is driven by end time, not this field — don't overwrite from the form.
   if(!t.isEvent){ d.completionDate = F.completion.value; }
-  if(t.seriesId) syncSeriesShared(t);   // propagate shared fields to series instances
+  if(t.seriesId || t.repeatId) syncSeriesShared(t);   // propagate shared fields to related instances
   return t;
 }
 
@@ -1952,13 +2166,17 @@ document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !scrim.hidden
 
 /* ---------- Boot ---------- */
 load();
+viewWeekKey = currentWeekKey();   // start on the real current week
 document.getElementById('includeEventsFlag').checked = !!state.includeEventsInSummary;
+document.getElementById('weekPrev').addEventListener('click', ()=>shiftViewedWeek(-1));
+document.getElementById('weekNext').addEventListener('click', ()=>shiftViewedWeek(1));
+document.getElementById('weekToday').addEventListener('click', goToCurrentWeek);
 rolloverWeeks();
 sweepOverdue();
 render();
 setInterval(()=>{
   // don't rebuild the DOM mid-resize or mid-drag, it would interrupt the gesture
-  if(document.querySelector('.block[data-resizing="1"]') || dragTaskId) return;
+  if(document.querySelector('.block[data-resizing="1"]') || dragTaskId || blockDragging) return;
   rolloverWeeks();
   sweepOverdue();
   render();
