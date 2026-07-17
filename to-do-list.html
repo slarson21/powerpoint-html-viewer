@@ -130,6 +130,14 @@
 
   .list{display:flex;flex-direction:column;gap:7px}
   .list-scroll.drop-return{outline:2px dashed var(--sage);outline-offset:3px;border-radius:8px;background:var(--sage-tint)}
+  #todoList.drop-return{outline:2px dashed var(--sage);outline-offset:3px;border-radius:8px}
+  /* parting gap: open space where a dragged calendar block will slot into the list */
+  #todoList .task.gap-above{margin-top:34px;transition:margin .12s ease}
+  #todoList .task.gap-below{margin-bottom:34px;transition:margin .12s ease}
+  #todoList .task.gap-above::before{
+    content:'';position:absolute;left:0;right:0;top:-20px;height:3px;border-radius:2px;
+    background:var(--sage);
+  }
   .task{
     display:flex;align-items:flex-start;gap:9px;
     background:#fff;border:1px solid var(--line);border-left:3px solid var(--accent);
@@ -1407,7 +1415,7 @@ function placeTask(id, dayIndex, slot, len){
 
 /* Return a scheduled block to the to-do list (drag calendar -> list).
    Clears its calendar placement and any completed shadow. */
-function unscheduleTask(id){
+function unscheduleTask(id, atIndex){
   const t = state.tasks.find(x=>x.id===id);
   if(!t || t.status!=='scheduled') return;
   // drop any completed-shadow this block had
@@ -1415,11 +1423,22 @@ function unscheduleTask(id){
   t.status = 'todo';
   t.checked = false;
   t.spent = false;
-  t.order = minOrder() - 1;       // place at top priority
   delete t.dayIndex; delete t.startSlot; delete t.lenSlots;
   delete t.weekKey; delete t.childId; delete t.completedAt;
   // a series instance pulled back to the list is no longer a calendar occurrence
   if(t.seriesId) delete t.seriesId;
+  // position in the list: at a specific slot if given, else top priority
+  if(typeof atIndex === 'number'){
+    // build the current ordering (repeating pinned first, then by order), excluding t,
+    // then splice t in at atIndex and renumber so the order sticks
+    const others = state.tasks.filter(x=>x.status==='todo' && x.id!==t.id)
+      .sort((a,b)=>{ const ar=a.repeatId?0:1, br=b.repeatId?0:1; return (ar-br)||(a.order-b.order); });
+    const idx = Math.max(0, Math.min(atIndex, others.length));
+    others.splice(idx, 0, t);
+    others.forEach((x,i)=>{ x.order = i; });
+  } else {
+    t.order = minOrder() - 1;       // default: top priority
+  }
   save(); render();
 }
 
@@ -1618,6 +1637,35 @@ function enableBlockDrag(b, t){
       cols = [...grid.querySelectorAll('.day-col')].map(c=>({el:c, day:Number(c.dataset.day), rect:c.getBoundingClientRect()}));
     };
 
+    // Compute where in the to-do list the cursor sits, and open a gap there.
+    // Returns the insertion index, or null if the cursor isn't over the list.
+    let listInsertIndex = null;
+    const listEl = document.getElementById('todoList');
+    const clearListGap = ()=>{
+      listEl.querySelectorAll('.task').forEach(el=>el.classList.remove('gap-above','gap-below'));
+      listEl.classList.remove('drop-return');
+    };
+    const updateListGap = (ev)=>{
+      const lr = listEl.getBoundingClientRect();
+      const over = ev.clientX>=lr.left && ev.clientX<=lr.right && ev.clientY>=lr.top && ev.clientY<=lr.bottom;
+      if(!over){ if(listInsertIndex!==null){ clearListGap(); listInsertIndex=null; } return false; }
+      listEl.classList.add('drop-return');
+      const items = [...listEl.querySelectorAll('.task')];
+      // find the first item whose vertical midpoint is below the cursor -> insert before it
+      let idx = items.length;
+      for(let i=0;i<items.length;i++){
+        const r = items[i].getBoundingClientRect();
+        if(ev.clientY < r.top + r.height/2){ idx = i; break; }
+      }
+      // paint the gap
+      items.forEach((el,i)=>{
+        el.classList.toggle('gap-above', i===idx);
+        el.classList.toggle('gap-below', idx===items.length && i===items.length-1);
+      });
+      listInsertIndex = idx;
+      return true;
+    };
+
     const paint = ()=>{
       rafId = null;
       const ev = lastEv;
@@ -1625,6 +1673,11 @@ function enableBlockDrag(b, t){
       // follow cursor
       b.style.left = (ev.clientX - offsetX)+'px';
       b.style.top  = (ev.clientY - offsetY)+'px';
+      // if hovering the to-do list, show the insertion gap and skip column highlight
+      if(updateListGap(ev)){
+        if(lastCol){ clearHighlight(lastCol.el); lastCol=null; }
+        return;
+      }
       // highlight target slot; only touch columns whose highlight changes
       const col = cols.find(c=> ev.clientX >= c.rect.left && ev.clientX <= c.rect.right) || null;
       if(lastCol && lastCol!==col) clearHighlight(lastCol.el);
@@ -1663,22 +1716,21 @@ function enableBlockDrag(b, t){
       document.body.classList.remove('dragging-block');   // restore normal text selection
       if(rafId!==null){ cancelAnimationFrame(rafId); rafId=null; }
       if(!moved){ blockDragging=false; return; }   // it was a click
-      // clear any highlight
+      // clear highlights and the list gap
       cols.forEach(c=>clearHighlight(c.el));
+      clearListGap();
       const col = cols.find(c=> ev.clientX >= c.rect.left && ev.clientX <= c.rect.right) || null;
       blockDragging = false;
-      if(col){
+      const lr = listEl.getBoundingClientRect();
+      const overList = ev.clientX>=lr.left && ev.clientX<=lr.right && ev.clientY>=lr.top && ev.clientY<=lr.bottom;
+      if(overList){
+        unscheduleTask(t.id, listInsertIndex==null ? undefined : listInsertIndex);   // drop into the list at the gap
+      } else if(col){
         let slot = Math.round((ev.clientY - offsetY - col.rect.top)/SLOT_PX);
         slot = Math.max(0, Math.min(TOTAL_SLOTS - t.lenSlots, slot));
         placeTaskAt(t.id, col.day, slot, t.lenSlots);
       } else {
-        const listEl = document.getElementById('todoList');
-        const lr = listEl.getBoundingClientRect();
-        if(ev.clientX>=lr.left && ev.clientX<=lr.right && ev.clientY>=lr.top && ev.clientY<=lr.bottom){
-          unscheduleTask(t.id);
-        } else {
-          render();   // snap back to its stored position
-        }
+        render();   // snap back to its stored position
       }
     };
 
@@ -1695,6 +1747,21 @@ function placeTaskAt(id, dayIndex, slot, len){
   t.startSlot = slot;
   t.lenSlots = len;
   t.weekKey = viewedWeekKey();
+  // recompute greyed/spent state for the new time: future -> live, past -> spent
+  const end = slotToDate(t.dayIndex, t.startSlot + t.lenSlots, t.weekKey);
+  const nowPast = new Date() >= end;
+  if(!nowPast && t.spent){
+    // moved into the future: un-grey it, and drop any return-copy it spawned when missed
+    t.spent = false;
+    if(t.childId){
+      const c = state.tasks.find(x=>x.id===t.childId);
+      if(c && c.status==='todo') removeTask(c.id);
+      t.childId = null;
+    }
+    t.returned = false;
+  } else if(nowPast){
+    t.spent = true;
+  }
   save(); render();
 }
 
