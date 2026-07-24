@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Moen Flo · Product Roadmap</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --ink:#0d2b3e;          /* deep water navy */
+    --ink-soft:#3f5c6e;
+    --paper:#f5f7f8;
+    --panel:#ffffff;
+    --line:#d3dde2;
+    --line-strong:#9fb2bc;
+    --accent:#0aa3c2;       /* flo cyan */
+    --shutoff:#0f7ba8;      /* valve blue */
+    --monitor:#12a58b;      /* teal green */
+    --detector:#e07a3f;     /* warning amber */
+    --grid-tick:#c3d0d6;
+    --radius:8px;
+    --shadow:0 1px 2px rgba(13,43,62,.06),0 8px 24px rgba(13,43,62,.06);
+    font-synthesis:none;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--paper);color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- Top bar ---------- */
+  header{
+    position:sticky;top:0;z-index:50;
+    background:var(--ink);color:#fff;
+    padding:14px 22px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    box-shadow:0 2px 10px rgba(0,0,0,.15);
+  }
+  header .brand{display:flex;flex-direction:column;line-height:1.1;margin-right:auto}
+  header .brand b{font-size:16px;letter-spacing:.02em}
+  header .brand span{font-size:11px;color:#9fc7d4;letter-spacing:.14em;text-transform:uppercase;margin-top:3px}
+  .ctrl{display:flex;align-items:center;gap:8px;font-size:13px}
+  .ctrl label{color:#cfe3ea;white-space:nowrap}
+  .btn{
+    background:var(--accent);color:#03222a;border:none;border-radius:6px;
+    padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.01em;
+    transition:filter .15s,transform .05s;
+  }
+  .btn:hover{filter:brightness(1.08)}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:transparent;color:#cfe3ea;border:1px solid rgba(255,255,255,.28)}
+  .btn.ghost:hover{background:rgba(255,255,255,.08)}
+  select,input[type=date]{
+    background:#0a3a4f;color:#fff;border:1px solid rgba(255,255,255,.2);
+    border-radius:6px;padding:6px 8px;font-size:12px;font-family:inherit;
+  }
+  .switch{position:relative;display:inline-block;width:40px;height:22px}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;inset:0;background:rgba(255,255,255,.25);border-radius:22px;transition:.2s;cursor:pointer}
+  .slider:before{content:"";position:absolute;height:16px;width:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+  .switch input:checked + .slider{background:var(--accent)}
+  .switch input:checked + .slider:before{transform:translateX(18px)}
+
+  /* ---------- Canvas ---------- */
+  #stage{padding:24px;overflow-x:auto}
+  #chart{
+    background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow);
+    min-width:900px;position:relative;overflow:hidden;
+  }
+  .chart-title{padding:20px 24px 4px;font-size:19px;font-weight:700}
+  .chart-sub{padding:0 24px 16px;font-size:12px;color:var(--ink-soft)}
+
+  .timeline{position:relative;border-top:1px solid var(--line);margin:0 24px}
+  .axis{position:relative;height:34px}
+  .tick{position:absolute;top:0;height:100%;border-left:1px solid var(--grid-tick)}
+  .tick.major{border-left:1px solid var(--line-strong)}
+  .tick .lbl{position:absolute;top:8px;left:6px;font-size:11px;color:var(--ink-soft);white-space:nowrap}
+  .tick.major .lbl{font-weight:700;color:var(--ink)}
+
+  .lane{position:relative;border-top:1px solid var(--line)}
+  .lane-head{
+    display:flex;align-items:center;gap:10px;padding:12px 24px 6px;
+  }
+  .dot{width:11px;height:11px;border-radius:3px}
+  .lane-name{font-weight:700;font-size:14px}
+  .lane-count{font-size:11px;color:var(--ink-soft);margin-left:auto;padding-right:2px}
+  .track{position:relative;margin:0 24px 16px;min-height:46px}
+  .track.drop-target{background:rgba(10,163,194,.08);outline:2px dashed var(--accent);outline-offset:-2px;border-radius:6px}
+  /* faint vertical gridlines inside tracks */
+  .gridline{position:absolute;top:0;bottom:0;border-left:1px solid var(--grid-tick);opacity:.5;pointer-events:none}
+  .gridline.major{opacity:.85;border-left:1px solid var(--line-strong)}
+  .today{position:absolute;top:0;bottom:0;border-left:2px dashed var(--detector);z-index:6;pointer-events:none}
+  .today .flag{position:absolute;top:2px;left:4px;font-size:9px;font-weight:700;color:var(--detector);letter-spacing:.08em;text-transform:uppercase;background:rgba(255,255,255,.85);padding:1px 4px;border-radius:3px;white-space:nowrap}
+  .today .flag.flip{left:auto;right:4px}
+
+  /* Bar is now a card. The header strip is the drag handle. */
+  .bar{
+    position:absolute;border-radius:8px;
+    color:#fff;font-size:12px;box-shadow:0 1px 3px rgba(13,43,62,.22);
+    user-select:none;overflow:hidden;transition:filter .12s;
+    display:flex;flex-direction:column;min-width:70px;
+  }
+  .bar:hover{filter:brightness(1.04)}
+  .bar.dragging{box-shadow:0 8px 24px rgba(13,43,62,.28);opacity:.96;transition:none;cursor:grabbing}
+  .bar.dragging .bar-head{cursor:grabbing}
+  .bar .rz{position:absolute;top:0;bottom:0;width:9px;cursor:ew-resize;z-index:3}
+  .bar .rz.l{left:0}.bar .rz.r{right:0}
+  .bar .bar-head{
+    display:flex;align-items:center;gap:6px;padding:6px 12px;font-weight:600;
+    cursor:grab;white-space:nowrap;overflow:hidden;flex:0 0 auto;
+  }
+  .bar .bar-head .name{overflow:hidden;text-overflow:ellipsis}
+  .bar .dates{opacity:.85;font-weight:500;font-size:10px;margin-left:auto;padding-left:6px}
+  .bar .edit-pencil{opacity:0;font-size:11px;cursor:pointer;padding:0 2px}
+  .bar:hover .edit-pencil{opacity:.9}
+  /* body holds picture + features on a light surface for readability */
+  .bar .bar-body{
+    background:rgba(255,255,255,.94);color:var(--ink);
+    padding:8px 10px;display:flex;flex-direction:column;gap:8px;flex:1 1 auto;overflow:hidden;
+  }
+  .bar .bar-img{width:100%;border-radius:4px;object-fit:contain;display:block}
+  .bar .bar-img.s{max-height:56px}
+  .bar .bar-img.m{max-height:120px}
+  .bar .bar-img.l{max-height:200px}
+  .bar .feat{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+  .bar .feat li{position:relative;padding-left:14px;font-size:11px;line-height:1.35;color:var(--ink-soft);white-space:normal}
+  .bar .feat li:before{content:"";position:absolute;left:2px;top:6px;width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.5}
+  .milestone{
+    position:absolute;top:8px;width:22px;height:22px;margin-top:4px;transform:rotate(45deg);
+    border-radius:4px;box-shadow:0 1px 3px rgba(13,43,62,.3);cursor:grab;z-index:4;transition:filter .12s,box-shadow .12s;
+  }
+  .milestone:hover{filter:brightness(1.1);box-shadow:0 2px 8px rgba(13,43,62,.4)}
+  .milestone-lbl{position:absolute;top:14px;font-size:10px;font-weight:600;color:var(--ink);white-space:nowrap;z-index:5}
+  .milestone-lbl:hover{color:var(--accent);text-decoration:underline}
+
+  .add-row{padding:0 24px 20px}
+  .add-item{background:transparent;border:1px dashed var(--line-strong);color:var(--ink-soft);
+    border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit}
+  .add-item:hover{border-color:var(--accent);color:var(--accent)}
+
+  footer{padding:8px 24px 40px;color:var(--ink-soft);font-size:11px;text-align:center}
+  .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;
+    background:var(--ink);color:#fff;padding:11px 18px;border-radius:8px;font-size:13px;font-weight:500;
+    box-shadow:0 8px 24px rgba(13,43,62,.3);z-index:200;transition:opacity .2s,transform .2s;max-width:80vw}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.err{background:#b23b32}
+
+  /* ---------- Editor modal ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(13,43,62,.45);display:none;align-items:center;justify-content:center;z-index:100}
+  .overlay.open{display:flex}
+  .modal{background:#fff;border-radius:10px;width:380px;max-width:92vw;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modal h3{margin:0 0 16px;font-size:16px}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:5px}
+  .field input,.field select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;background:#fff;color:var(--ink)}
+  .modal-actions{display:flex;gap:8px;justify-content:space-between;margin-top:18px}
+  .modal-actions .right{display:flex;gap:8px}
+  .btn.dark{background:var(--ink);color:#fff}
+  .btn.danger{background:#fff;color:#c0392b;border:1px solid #e2b7b2}
+  .modal{max-height:88vh;overflow-y:auto}
+  .img-controls{display:flex;gap:8px;margin-bottom:8px}
+  .file-btn{display:inline-block;background:#fff;border:1px solid var(--line);border-radius:6px;padding:7px 12px;font-size:12px;color:var(--ink);cursor:pointer}
+  .file-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .file-btn input{display:none}
+  .paste-btn{background:#fff;border:1px solid var(--line);border-radius:6px;padding:7px 12px;font-size:12px;color:var(--ink);cursor:pointer;font-family:inherit}
+  .paste-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .img-drop{border:1.5px dashed var(--line-strong);border-radius:6px;padding:14px;text-align:center;font-size:11px;color:var(--ink-soft);transition:.15s}
+  .img-drop.hover{border-color:var(--accent);background:rgba(10,163,194,.06);color:var(--accent)}
+  .img-preview{margin-top:8px;position:relative;display:none}
+  .img-size{display:none;align-items:center;gap:10px;margin-top:10px}
+  .img-size label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin:0}
+  .img-size select{width:auto;padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;background:#fff;color:var(--ink)}
+  .img-preview img{width:100%;border-radius:6px;display:block;border:1px solid var(--line)}
+  .img-preview .remove-img{position:absolute;top:6px;right:6px;background:rgba(13,43,62,.8);color:#fff;border:none;border-radius:5px;font-size:11px;padding:3px 8px;cursor:pointer}
+  .feat-editor{display:flex;flex-direction:column;gap:6px}
+  .feat-editor .feat-line{display:flex;gap:6px}
+  .feat-editor .feat-line input{flex:1}
+  .feat-editor .feat-line button{background:#fff;border:1px solid var(--line);border-radius:6px;color:var(--ink-soft);cursor:pointer;padding:0 10px;font-size:14px}
+  .feat-editor .feat-line button:hover{color:#c0392b;border-color:#e2b7b2}
+  .add-feat{align-self:flex-start;background:transparent;border:1px dashed var(--line-strong);color:var(--ink-soft);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+  .add-feat:hover{border-color:var(--accent);color:var(--accent)}
+  @media print{header,.add-row,footer{display:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><b>Moen Flo</b><span>Product Roadmap</span></div>
+
+  <div class="ctrl">
+    <label for="fromQ">Range</label>
+    <select id="fromQ"></select>
+    <span style="color:#7fa9b8">→</span>
+    <select id="toQ"></select>
+  </div>
+
+  <div class="ctrl">
+    <label for="scaleSel">Ticks</label>
+    <select id="scaleSel">
+      <option value="month">Monthly</option>
+      <option value="quarter" selected>Quarterly</option>
+    </select>
+  </div>
+
+  <div class="ctrl">
+    <span style="color:#cfe3ea">Dates</span>
+    <label class="switch"><input type="checkbox" id="datesToggle" checked><span class="slider"></span></label>
+  </div>
+
+  <button class="btn ghost" id="resetBtn">Reset</button>
+  <button class="btn ghost" id="importBtn">Import Backup</button>
+  <input type="file" id="importFile" accept="application/json,.json" style="display:none">
+  <button class="btn ghost" id="exportBtn">Export Backup</button>
+  <button class="btn" id="pdfBtn">Export PDF</button>
+</header>
+
+<div id="stage">
+  <div id="chart">
+    <div class="chart-title">Product Roadmap</div>
+    <div class="chart-sub" id="rangeSub"></div>
+    <div class="timeline"><div class="axis" id="axis"></div></div>
+    <div id="lanes"></div>
+  </div>
+  <footer>Drag a bar's header to move it — across lanes too, and it recolors. Drag edges to resize · click ✎ to edit. Use Export Backup to save a backup file, and Import Backup to restore it on another device.</footer>
+</div>
+<div id="toast" class="toast"></div>
+
+<!-- Editor -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3 id="modalTitle">Edit item</h3>
+    <div class="field"><label>Name</label><input id="mName" type="text"></div>
+    <div class="field"><label>Type</label>
+      <select id="mType"><option value="bar">Bar (duration)</option><option value="milestone">Milestone (point)</option></select>
+    </div>
+    <div class="field"><label>Start</label><input id="mStart" type="date"></div>
+    <div class="field" id="endField"><label>End</label><input id="mEnd" type="date"></div>
+    <div class="field" id="imgField">
+      <label>Picture</label>
+      <div class="img-controls">
+        <label class="file-btn">Choose file…<input id="mImg" type="file" accept="image/*"></label>
+        <button type="button" class="paste-btn" id="pasteBtn">Paste from clipboard</button>
+      </div>
+      <div class="img-drop" id="imgDrop">Drop an image here, or paste (⌘/Ctrl+V)</div>
+      <div class="img-preview" id="imgPreview"><img id="imgPreviewEl" alt="preview"><button type="button" class="remove-img" id="imgRemove">Remove</button></div>
+      <div class="img-size" id="imgSizeRow">
+        <label>Image size</label>
+        <select id="mImgSize">
+          <option value="s">Small</option>
+          <option value="m" selected>Medium</option>
+          <option value="l">Large</option>
+        </select>
+      </div>
+    </div>
+    <div class="field" id="featField">
+      <label>Features</label>
+      <div class="feat-editor" id="featEditor"></div>
+      <button type="button" class="add-feat" id="addFeat">+ Add feature</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn danger" id="mDelete">Delete</button>
+      <div class="right">
+        <button class="btn ghost" id="mCancel" style="color:var(--ink-soft);border-color:var(--line)">Cancel</button>
+        <button class="btn dark" id="mSave">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------------- Data model ---------------- */
+const LANES = [
+  {id:"shutoff",  name:"Moen Flo Shutoff",  color:"var(--shutoff)"},
+  {id:"monitor",  name:"Moen Flo Monitor",  color:"var(--monitor)"},
+  {id:"detector", name:"Moen Flo Detector", color:"var(--detector)"},
+];
+
+const DEFAULTS = {
+  shutoff:[
+    {id:"s1",name:"Firmware 3.0",  type:"bar",start:"2026-01-15",end:"2026-04-30",features:["Adaptive leak learning","Faster valve actuation","Matter/Thread support"]},
+    {id:"s2",name:"Retail refresh",type:"bar",start:"2026-05-01",end:"2026-08-15"},
+    {id:"s3",name:"GA launch",     type:"milestone",start:"2026-09-01"},
+  ],
+  monitor:[
+    {id:"m1",name:"Sensor v2 eval",type:"bar",start:"2026-02-01",end:"2026-05-15"},
+    {id:"m2",name:"App integration",type:"bar",start:"2026-05-15",end:"2026-09-30"},
+    {id:"m3",name:"Beta",          type:"milestone",start:"2026-06-15"},
+  ],
+  detector:[
+    {id:"d1",name:"Base model (2.0)",type:"bar",start:"2026-03-01",end:"2026-07-31"},
+    {id:"d2",name:"Radon module",    type:"bar",start:"2026-08-01",end:"2026-12-15"},
+    {id:"d3",name:"Base ship",       type:"milestone",start:"2026-08-01"},
+  ],
+};
+
+let state = load() || structuredClone(DEFAULTS);
+let range = { from:"2026-01-01", to:"2026-12-31" };
+let showDates = true;
+let scale = "quarter";
+
+function save(){ try{ sessionStorage_shim.data = JSON.stringify(state);}catch(e){} }
+function load(){ try{ return sessionStorage_shim.data?JSON.parse(sessionStorage_shim.data):null;}catch(e){return null;} }
+// in-memory shim (artifact sandbox disallows real storage); persists for the session tab
+const sessionStorage_shim = {};
+
+/* ---------------- Date helpers ---------------- */
+const DAY = 86400000;
+const d = s => new Date(s+"T00:00:00");
+const iso = dt => dt.toISOString().slice(0,10);
+const clampISO = s => s;
+function daysBetween(a,b){ return Math.round((d(b)-d(a))/DAY); }
+// raw (unclamped) position of a date on the timeline, in %
+function rawPct(dateStr){
+  const total = daysBetween(range.from, range.to) || 1;
+  return (daysBetween(range.from, dateStr)/total)*100;
+}
+// clamped position for drawing (0–100)
+function pct(dateStr){ return Math.max(0, Math.min(100, rawPct(dateStr))); }
+// visible width of a bar between start and end, clipped to the range edges
+function widthPct(startStr,endStr){
+  const left  = Math.max(0, Math.min(100, rawPct(startStr)));
+  const right = Math.max(0, Math.min(100, rawPct(endStr)));
+  return Math.max(0.4, right-left);
+}
+function fmtShort(s){ const x=d(s); return x.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"2-digit"}); }
+
+/* ---------------- Range selectors ---------------- */
+function buildQuarterOptions(){
+  const opts=[];
+  for(let y=2025;y<=2040;y++){
+    opts.push({v:`${y}-01-01`,l:`Q1 ${y}`});
+    opts.push({v:`${y}-04-01`,l:`Q2 ${y}`});
+    opts.push({v:`${y}-07-01`,l:`Q3 ${y}`});
+    opts.push({v:`${y}-10-01`,l:`Q4 ${y}`});
+  }
+  return opts;
+}
+function initRangeSelectors(){
+  const from=document.getElementById("fromQ"), to=document.getElementById("toQ");
+  const opts=buildQuarterOptions();
+  from.innerHTML=""; to.innerHTML="";
+  opts.forEach(o=>{
+    from.add(new Option(o.l,o.v));
+    // end of quarter for "to"
+    const end = new Date(d(o.v)); end.setMonth(end.getMonth()+3); end.setDate(0);
+    to.add(new Option(o.l, iso(end)));
+  });
+  from.value="2026-01-01";
+  to.value="2026-12-31";
+  from.onchange=()=>{ range.from=from.value; render(); };
+  to.onchange=()=>{ range.to=to.value; render(); };
+}
+
+/* ---------------- Axis + gridlines ---------------- */
+function tickDates(){
+  const ticks=[];
+  const start=d(range.from), end=d(range.to);
+  let cur=new Date(start.getFullYear(), start.getMonth(), 1);
+  while(cur<=end){
+    const m=cur.getMonth();
+    const isQ = m%3===0;
+    if(scale==="month" || isQ){
+      ticks.push({date:iso(cur), major:isQ,
+        label: scale==="month"
+          ? cur.toLocaleDateString("en-US",{month:"short"}) + (m===0?` '${String(cur.getFullYear()).slice(2)}`:"")
+          : `Q${Math.floor(m/3)+1} ${cur.getFullYear()}`
+      });
+    }
+    cur.setMonth(cur.getMonth()+1);
+  }
+  return ticks;
+}
+function renderAxis(){
+  const axis=document.getElementById("axis");
+  axis.innerHTML="";
+  tickDates().forEach(t=>{
+    const el=document.createElement("div");
+    el.className="tick"+(t.major?" major":"");
+    el.style.left=pct(t.date)+"%";
+    el.innerHTML=showDates?`<span class="lbl">${t.label}</span>`:"";
+    axis.appendChild(el);
+  });
+}
+function gridlinesHTML(){
+  return tickDates().map(t=>`<div class="gridline${t.major?" major":""}" style="left:${pct(t.date)}%"></div>`).join("");
+}
+
+/* ---------------- Render lanes ---------------- */
+function render(){
+  document.getElementById("rangeSub").textContent =
+    `${d(range.from).toLocaleDateString("en-US",{month:"long",year:"numeric"})} – ${d(range.to).toLocaleDateString("en-US",{month:"long",year:"numeric"})}`;
+  renderAxis();
+  const wrap=document.getElementById("lanes");
+  wrap.innerHTML="";
+  const today=iso(new Date());
+  const todayIn = d(today)>=d(range.from) && d(today)<=d(range.to);
+
+  LANES.forEach(lane=>{
+    const items=state[lane.id]||[];
+    const bars=items.filter(i=>i.type==="bar");
+    const milestones=items.filter(i=>i.type==="milestone");
+
+    // estimate each bar's height from its content so rows can be packed and the track sized
+    bars.forEach(b=>b._h=estBarHeight(b));
+    const rows=packRows(bars);              // assigns b._row (0-based)
+    const ROW_GAP=12, MILESTONE_BAND=milestones.length?34:0;
+    // compute the top offset of each row = band + sum of tallest heights of previous rows
+    const rowHeights=[];
+    bars.forEach(b=>{ rowHeights[b._row]=Math.max(rowHeights[b._row]||0, b._h); });
+    const rowTops=[]; let acc=MILESTONE_BAND;
+    rowHeights.forEach((h,i)=>{ rowTops[i]=acc; acc+=h+ROW_GAP; });
+    const trackH=Math.max(46, acc);
+
+    const laneEl=document.createElement("div");
+    laneEl.className="lane";
+    laneEl.innerHTML=`
+      <div class="lane-head">
+        <span class="dot" style="background:${lane.color}"></span>
+        <span class="lane-name">${lane.name}</span>
+        <span class="lane-count">${items.length} item${items.length!==1?"s":""}</span>
+      </div>
+      <div class="track" data-lane="${lane.id}" style="min-height:${trackH}px">
+        ${gridlinesHTML()}
+        ${todayIn?`<div class="today" style="left:${pct(today)}%"><span class="flag${pct(today)>88?" flip":""}">Today</span></div>`:""}
+      </div>
+      <div class="add-row"><button class="add-item" data-lane="${lane.id}">+ Add to ${lane.name}</button></div>
+    `;
+    wrap.appendChild(laneEl);
+    const track=laneEl.querySelector(".track");
+    milestones.forEach(it=>track.appendChild(renderItem(lane,it,4)));
+    bars.forEach(it=>track.appendChild(renderItem(lane,it,rowTops[it._row])));
+  });
+
+  document.querySelectorAll(".add-item").forEach(b=>b.onclick=()=>openEditor(b.dataset.lane,null));
+  save();
+}
+
+/* crude but effective content-height estimate for a bar card */
+function estBarHeight(it){
+  let h=30;                                       // header strip
+  const hasBody = (it.img) || (it.features&&it.features.length);
+  if(hasBody){
+    h+=16;                                        // body padding
+    if(it.img){ const sz={s:56,m:120,l:200}[it.imgSize||"m"]; h += sz + 8; }
+    if(it.features&&it.features.length) h+= it.features.length*18 + (it.img?8:0);
+  }
+  return h;
+}
+
+/* greedy interval packing: put each bar in the first row where it doesn't overlap */
+function packRows(bars){
+  const sorted=[...bars].sort((a,b)=>d(a.start)-d(b.start));
+  const rowEnds=[];                               // last end date per row
+  sorted.forEach(b=>{
+    let placed=false;
+    for(let r=0;r<rowEnds.length;r++){
+      if(d(b.start) >= d(rowEnds[r])){ b._row=r; rowEnds[r]=b.end; placed=true; break; }
+    }
+    if(!placed){ b._row=rowEnds.length; rowEnds.push(b.end); }
+  });
+  return rowEnds.length;
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function renderItem(lane,it,top){
+  if(it.type==="milestone"){
+    const el=document.createElement("div");
+    el.className="milestone";
+    el.style.top=top+"px";
+    el.style.left=`calc(${pct(it.start)}% - 11px)`;
+    el.style.background=lane.color;
+    el.dataset.id=it.id; el.dataset.lane=lane.id;
+    const lbl=document.createElement("div");
+    lbl.className="milestone-lbl";
+    lbl.dataset.for=it.id;
+    lbl.style.top=(top+18)+"px";
+    lbl.style.left=`calc(${pct(it.start)}% + 16px)`;
+    lbl.textContent=it.name + (showDates?` · ${fmtShort(it.start)}`:"");
+    lbl.style.cursor="pointer";
+    lbl.title="Click to edit";
+    el.title="Click to edit · drag to move";
+    makeDraggable(el,lane.id,it,true,null,()=>openEditor(lane.id,it));
+    lbl.onclick=()=>openEditor(lane.id,it);
+    return wrapNodes([el,lbl]);
+  }
+  const el=document.createElement("div");
+  el.className="bar";
+  el.style.left=pct(it.start)+"%";
+  el.style.width=widthPct(it.start,it.end)+"%";
+  el.style.top=top+"px";
+  el.style.background=lane.color;
+  el.dataset.id=it.id; el.dataset.lane=lane.id;
+
+  const head=`<div class="bar-head">`
+    +`<span class="name">${esc(it.name)}</span>`
+    +(showDates?`<span class="dates">${fmtShort(it.start)}–${fmtShort(it.end)}</span>`:"")
+    +`<span class="edit-pencil" title="Edit">✎</span>`
+    +`</div>`;
+
+  const hasBody=(it.img)||(it.features&&it.features.length);
+  let body="";
+  if(hasBody){
+    const imgHtml=it.img?`<img class="bar-img ${it.imgSize||"m"}" src="${it.img}" alt="">`:"";
+    const featHtml=(it.features&&it.features.length)
+      ? `<ul class="feat">${it.features.map(f=>`<li>${esc(f)}</li>`).join("")}</ul>` : "";
+    body=`<div class="bar-body">${imgHtml}${featHtml}</div>`;
+  }
+
+  el.innerHTML=`<span class="rz l"></span>${head}${body}<span class="rz r"></span>`;
+
+  // dragging is bound to the header strip only, so content stays readable/scrollable
+  makeDraggable(el,lane.id,it,false, el.querySelector(".bar-head"), ()=>openEditor(lane.id,it));
+  el.querySelector(".edit-pencil").onclick=e=>{ e.stopPropagation(); openEditor(lane.id,it); };
+  return el;
+}
+function wrapNodes(nodes){
+  const g=document.createElement("div");
+  g.style.display="contents";
+  nodes.forEach(n=>g.appendChild(n));
+  return g;
+}
+
+/* ---------------- Drag & resize ---------------- */
+function makeDraggable(el,laneId,it,isMilestone,handle,onEdit){
+  let mode=null,startX=0,startY=0,orig={},targetLane=laneId,rafPending=false,lastEvt=null,moved=false;
+  const track=()=>el.closest(".track");
+  const trackW=()=>track().getBoundingClientRect().width;
+  const totalDays=()=>daysBetween(range.from,range.to)||1;
+
+  el.addEventListener("mousedown",e=>{
+    if(e.target.classList.contains("rz")){ mode = e.target.classList.contains("l")?"resizeL":"resizeR"; }
+    else if(!handle || handle.contains(e.target)){ mode="move"; }  // move only from the header handle
+    else return;                                                    // clicks inside the body do nothing
+    if(e.target.classList.contains("edit-pencil")) return;          // let the pencil handle its own click
+    startX=e.clientX; startY=e.clientY; moved=false;
+    orig={start:it.start,end:it.end};
+    targetLane=laneId;
+    document.body.style.cursor= mode==="move"?"grabbing":"ew-resize";
+    e.preventDefault();
+    window.addEventListener("mousemove",onMove);
+    window.addEventListener("mouseup",onUp);
+  });
+
+  function deltaDays(e){ return Math.round(((e.clientX-startX)/trackW())*totalDays()); }
+  function laneUnder(e){
+    const hit=document.elementFromPoint(e.clientX,e.clientY);
+    const t=hit&&hit.closest?hit.closest(".track"):null;
+    return t?t.dataset.lane:null;
+  }
+
+  function onMove(e){
+    // only treat it as a drag once the pointer clears a small threshold — a click stays a click
+    if(!moved && Math.abs(e.clientX-startX)<4 && Math.abs(e.clientY-startY)<4) return;
+    if(!moved && mode==="move"){
+      moved=true;
+      el.classList.add("dragging");
+      el.style.zIndex=50;
+      el.style.pointerEvents="none";     // so elementFromPoint sees the track beneath
+      el.style.willChange="transform";
+      if(isMilestone){ const lbl=document.querySelector(`.milestone-lbl[data-for="${it.id}"]`); if(lbl) lbl.style.visibility="hidden"; }
+    } else { moved=true; }
+    lastEvt=e;
+    if(rafPending) return;               // coalesce to one update per animation frame
+    rafPending=true;
+    requestAnimationFrame(()=>{
+      rafPending=false;
+      const ev=lastEvt;
+      if(mode==="move"){
+        // 1) follow the cursor 1:1 in pixels — pure transform, GPU-composited, no reflow
+        const dx=ev.clientX-startX, dy=ev.clientY-startY;
+        el.style.transform=`translate(${dx}px, ${dy}px)`;
+        // 2) figure out which lane we're hovering and recolor + highlight live
+        const over=laneUnder(ev);
+        if(over && over!==targetLane){
+          targetLane=over;
+          const laneDef=LANES.find(l=>l.id===targetLane);
+          if(laneDef) el.style.background=laneDef.color;
+        } else if(!over){ /* keep last target */ }
+        document.querySelectorAll(".track").forEach(t=>t.classList.toggle("drop-target", t.dataset.lane===targetLane && targetLane!==laneId));
+        // 3) update the underlying date model (for the dates label + drop commit) without moving the element
+        const dur = isMilestone?0:daysBetween(orig.start,orig.end);
+        let nsMs = d(orig.start).getTime()+deltaDays(ev)*DAY;
+        // keep the whole bar inside the visible range: start can't go before range.from, end can't pass range.to
+        const minMs=d(range.from).getTime();
+        const maxMs=d(range.to).getTime()-dur*DAY;
+        nsMs=Math.max(minMs, Math.min(maxMs, nsMs));
+        const ns=new Date(nsMs);
+        it.start=iso(ns);
+        if(!isMilestone){ it.end=iso(new Date(nsMs+dur*DAY)); }
+        const dsp=el.querySelector(".dates"); if(dsp) dsp.textContent=`${fmtShort(it.start)}–${fmtShort(it.end)}`;
+      }else if(mode==="resizeL"){
+        let nsMs=Math.max(d(range.from).getTime(), d(orig.start).getTime()+deltaDays(ev)*DAY);
+        const ns=iso(new Date(nsMs));
+        if(daysBetween(ns,it.end)>1){ it.start=ns; liveUpdate(el,it,isMilestone); }
+      }else if(mode==="resizeR"){
+        let neMs=Math.min(d(range.to).getTime(), d(orig.end).getTime()+deltaDays(ev)*DAY);
+        const ne=iso(new Date(neMs));
+        if(daysBetween(it.start,ne)>1){ it.end=ne; liveUpdate(el,it,isMilestone); }
+      }
+    });
+  }
+
+  function onUp(){
+    window.removeEventListener("mousemove",onMove);
+    window.removeEventListener("mouseup",onUp);
+    document.body.style.cursor="";
+    // no movement → it was a click: open the editor, don't disturb anything else
+    if(!moved){
+      el.classList.remove("dragging");
+      el.style.zIndex=""; el.style.pointerEvents=""; el.style.willChange=""; el.style.transform="";
+      if(onEdit) onEdit();
+      return;
+    }
+    el.classList.remove("dragging");
+    el.style.zIndex=""; el.style.pointerEvents=""; el.style.willChange=""; el.style.transform="";
+    document.querySelectorAll(".track").forEach(t=>t.classList.remove("drop-target"));
+    // commit a lane change if the item was dropped over a different lane
+    if(mode==="move" && targetLane!==laneId){
+      const from=state[laneId], to=state[targetLane];
+      const i=from.indexOf(it);
+      if(i>-1){ from.splice(i,1); to.push(it); }
+    }
+    render();   // snaps everything back to the true grid position + re-packs rows
+  }
+}
+function liveUpdate(el,it,isMilestone){
+  if(isMilestone){ el.style.left=`calc(${pct(it.start)}% - 11px)`; }
+  else{ el.style.left=pct(it.start)+"%"; el.style.width=widthPct(it.start,it.end)+"%";
+        const dsp=el.querySelector(".dates"); if(dsp) dsp.textContent=`${fmtShort(it.start)}–${fmtShort(it.end)}`; }
+}
+
+/* ---------------- Editor ---------------- */
+let editing={lane:null,item:null};
+let pendingImg=null;   // staged data URL for the image being edited
+
+function openEditor(laneId,item){
+  editing={lane:laneId,item};
+  document.getElementById("modalTitle").textContent = item?"Edit item":"New item";
+  document.getElementById("mName").value = item?item.name:"";
+  document.getElementById("mType").value = item?item.type:"bar";
+  document.getElementById("mStart").value = item?item.start:iso(new Date());
+  document.getElementById("mEnd").value = item&&item.end?item.end:iso(new Date(Date.now()+30*DAY));
+  document.getElementById("mDelete").style.display = item?"inline-block":"none";
+  document.getElementById("mImg").value="";
+  pendingImg = item&&item.img ? item.img : null;
+  document.getElementById("mImgSize").value = (item&&item.imgSize) || "m";
+  renderImgPreview();
+  renderFeatEditor(item&&item.features?item.features:[]);
+  toggleTypeFields();
+  document.getElementById("overlay").classList.add("open");
+}
+function toggleTypeFields(){
+  const isBar=document.getElementById("mType").value==="bar";
+  document.getElementById("endField").style.display = isBar?"block":"none";
+  document.getElementById("imgField").style.display = isBar?"block":"none";
+  document.getElementById("featField").style.display = isBar?"block":"none";
+}
+document.getElementById("mType").onchange=toggleTypeFields;
+
+/* image */
+function renderImgPreview(){
+  const wrap=document.getElementById("imgPreview");
+  const sizeRow=document.getElementById("imgSizeRow");
+  if(pendingImg){
+    const el=document.getElementById("imgPreviewEl");
+    el.src=pendingImg;
+    el.style.maxHeight={s:"56px",m:"120px",l:"200px"}[document.getElementById("mImgSize").value]||"120px";
+    el.style.objectFit="contain";
+    wrap.style.display="block"; sizeRow.style.display="flex";
+  } else { wrap.style.display="none"; sizeRow.style.display="none"; }
+}
+document.getElementById("mImgSize").onchange=renderImgPreview;   // live-preview the chosen size
+document.getElementById("mImg").onchange=e=>{ const f=e.target.files[0]; if(f) loadImageFile(f); };
+document.getElementById("imgRemove").onclick=()=>{ pendingImg=null; document.getElementById("mImg").value=""; renderImgPreview(); };
+
+// shared entry point: any File/Blob that is an image → downscale → stage
+function loadImageFile(file){
+  if(!file || !file.type.startsWith("image/")) return;
+  const r=new FileReader();
+  r.onload=()=>downscale(r.result, out=>{ pendingImg=out; renderImgPreview(); });
+  r.readAsDataURL(file);
+}
+
+// Paste button — uses the async Clipboard API where allowed
+document.getElementById("pasteBtn").onclick=async()=>{
+  try{
+    const items=await navigator.clipboard.read();
+    for(const it of items){
+      const type=it.types.find(t=>t.startsWith("image/"));
+      if(type){ loadImageFile(await it.getType(type)); return; }
+    }
+    alert("No image found on the clipboard. Copy an image, then try again — or just press ⌘/Ctrl+V while this dialog is open.");
+  }catch(err){
+    alert("Clipboard access was blocked. Press ⌘/Ctrl+V while this dialog is open to paste instead.");
+  }
+};
+
+// Paste anywhere while the modal is open (covers browsers that block the button's API)
+document.addEventListener("paste",e=>{
+  if(!document.getElementById("overlay").classList.contains("open")) return;
+  const items=e.clipboardData&&e.clipboardData.items;
+  if(!items) return;
+  for(const it of items){
+    if(it.type.startsWith("image/")){ loadImageFile(it.getAsFile()); e.preventDefault(); return; }
+  }
+});
+
+// Drag an image file straight onto the drop zone
+const drop=document.getElementById("imgDrop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.add("hover"); }));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.remove("hover"); }));
+drop.addEventListener("drop",e=>{ const f=e.dataTransfer.files[0]; if(f) loadImageFile(f); });
+
+// resize to <=640px wide and re-encode as JPEG so state + PDF stay light
+function downscale(dataUrl, cb){
+  const img=new Image();
+  img.onload=()=>{
+    const maxW=640, scale=Math.min(1, maxW/img.width);
+    const c=document.createElement("canvas");
+    c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale);
+    c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+    cb(c.toDataURL("image/jpeg",0.82));
+  };
+  img.onerror=()=>cb(dataUrl);
+  img.src=dataUrl;
+}
+
+/* features */
+function renderFeatEditor(features){
+  const box=document.getElementById("featEditor");
+  box.innerHTML="";
+  features.forEach(f=>addFeatLine(f));
+}
+function addFeatLine(val=""){
+  const box=document.getElementById("featEditor");
+  const row=document.createElement("div");
+  row.className="feat-line";
+  const inp=document.createElement("input");
+  inp.type="text"; inp.value=val; inp.placeholder="Feature…";
+  const del=document.createElement("button");
+  del.type="button"; del.textContent="×"; del.title="Remove";
+  del.onclick=()=>row.remove();
+  row.appendChild(inp); row.appendChild(del);
+  box.appendChild(row);
+  inp.focus();
+}
+document.getElementById("addFeat").onclick=()=>addFeatLine();
+
+document.getElementById("mCancel").onclick=()=>document.getElementById("overlay").classList.remove("open");
+document.getElementById("overlay").onclick=e=>{ if(e.target.id==="overlay") document.getElementById("overlay").classList.remove("open"); };
+document.getElementById("mSave").onclick=()=>{
+  const name=document.getElementById("mName").value.trim()||"Untitled";
+  const type=document.getElementById("mType").value;
+  const start=document.getElementById("mStart").value;
+  let end=document.getElementById("mEnd").value;
+  if(type==="bar" && d(end)<=d(start)) end=iso(new Date(d(start).getTime()+30*DAY));
+  const features=[...document.querySelectorAll("#featEditor .feat-line input")]
+    .map(i=>i.value.trim()).filter(Boolean);
+  const imgSize=document.getElementById("mImgSize").value;
+  const patch={ name, type, start,
+    end: type==="bar"?end:undefined,
+    img: type==="bar"?(pendingImg||undefined):undefined,
+    imgSize: (type==="bar"&&pendingImg)?imgSize:undefined,
+    features: type==="bar"&&features.length?features:undefined };
+  const arr=state[editing.lane];
+  if(editing.item){
+    // clear stale optional keys then apply
+    delete editing.item.img; delete editing.item.imgSize; delete editing.item.features;
+    Object.assign(editing.item,patch);
+  } else { arr.push({id:"x"+Date.now(),...patch}); }
+  document.getElementById("overlay").classList.remove("open");
+  render();
+};
+document.getElementById("mDelete").onclick=()=>{
+  const arr=state[editing.lane];
+  const i=arr.indexOf(editing.item);
+  if(i>-1) arr.splice(i,1);
+  document.getElementById("overlay").classList.remove("open");
+  render();
+};
+
+/* ---------------- Controls ---------------- */
+document.getElementById("datesToggle").onchange=e=>{ showDates=e.target.checked; render(); };
+document.getElementById("scaleSel").onchange=e=>{ scale=e.target.value; render(); };
+let resetArmed=false, resetTimer=null;
+document.getElementById("resetBtn").onclick=()=>{
+  if(resetArmed){ resetArmed=false; clearTimeout(resetTimer); state=structuredClone(DEFAULTS); render(); toast("Roadmap reset to defaults."); return; }
+  resetArmed=true;
+  toast("Click Reset again to confirm — this replaces the current roadmap.");
+  resetTimer=setTimeout(()=>{ resetArmed=false; }, 4000);
+};
+
+/* ---------------- Backup: export / import data ---------------- */
+const BACKUP_VERSION=1;
+document.getElementById("exportBtn").onclick=()=>{
+  const backup={
+    app:"moen-flo-roadmap",
+    version:BACKUP_VERSION,
+    savedAt:new Date().toISOString(),
+    view:{ from:range.from, to:range.to, scale, showDates },
+    lanes:state
+  };
+  const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download=`Moen-Flo-Roadmap_${iso(new Date())}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1500);   // give the download time to start before revoking
+  toast("Backup exported.");
+};
+
+/* small non-blocking status message (browser confirm/alert can be suppressed in embedded frames) */
+let toastTimer=null;
+function toast(msg, isErr){
+  const t=document.getElementById("toast");
+  t.textContent=msg;
+  t.classList.toggle("err", !!isErr);
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove("show"), isErr?4500:2500);
+}
+
+document.getElementById("importBtn").onclick=()=>document.getElementById("importFile").click();
+document.getElementById("importFile").onchange=e=>{
+  const f=e.target.files[0];
+  if(!f){ return; }
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const data=JSON.parse(r.result);
+      if(!data || (data.app && data.app!=="moen-flo-roadmap")) throw new Error("this isn't a roadmap backup file.");
+      const lanes=data.lanes || data;                 // tolerate a bare lanes object too
+      // validate that every expected lane exists and is an array
+      LANES.forEach(l=>{ if(!Array.isArray(lanes[l.id])) throw new Error(`missing or invalid lane "${l.name}".`); });
+      // keep only known lanes; coerce items to the expected shape
+      const clean={};
+      let count=0;
+      LANES.forEach(l=>{
+        clean[l.id]=lanes[l.id].filter(it=>it&&it.name&&it.start&&(it.type==="milestone"||it.end))
+          .map(it=>{
+            count++;
+            return {
+              id: it.id||("x"+Math.random().toString(36).slice(2)),
+              name:String(it.name),
+              type: it.type==="milestone"?"milestone":"bar",
+              start:it.start,
+              end: it.type==="milestone"?undefined:it.end,
+              img: it.img||undefined,
+              imgSize: it.img&&["s","m","l"].includes(it.imgSize)?it.imgSize:(it.img?"m":undefined),
+              features: Array.isArray(it.features)&&it.features.length?it.features.map(String):undefined
+            };
+          });
+      });
+      state=clean;
+      // restore view settings if present
+      if(data.view){
+        if(data.view.from) range.from=data.view.from;
+        if(data.view.to)   range.to=data.view.to;
+        if(data.view.scale){ scale=data.view.scale; document.getElementById("scaleSel").value=scale; }
+        if(typeof data.view.showDates==="boolean"){ showDates=data.view.showDates; document.getElementById("datesToggle").checked=showDates; }
+        syncRangeSelectors();
+      }
+      render();
+      toast(`Backup imported — ${count} item${count!==1?"s":""} loaded.`);
+    }catch(err){
+      toast("Couldn't import that file: "+err.message, true);
+    }finally{
+      e.target.value="";   // allow re-importing the same filename later
+    }
+  };
+  r.onerror=()=>toast("Couldn't read that file.", true);
+  r.readAsText(f);
+};
+// point the range dropdowns at the current range (adds an option if an exact match isn't in the list)
+function syncRangeSelectors(){
+  const from=document.getElementById("fromQ"), to=document.getElementById("toQ");
+  ensureOption(from, range.from);
+  ensureOption(to, range.to);
+  from.value=range.from; to.value=range.to;
+}
+function ensureOption(sel, val){
+  if(![...sel.options].some(o=>o.value===val)){
+    sel.add(new Option(d(val).toLocaleDateString("en-US",{month:"short",year:"numeric"}), val));
+  }
+}
+
+/* ---------------- PDF export ---------------- */
+document.getElementById("pdfBtn").onclick=async()=>{
+  const btn=document.getElementById("pdfBtn"); const old=btn.textContent; btn.textContent="Rendering…";
+  const node=document.getElementById("chart");
+  try{
+    const canvas=await html2canvas(node,{scale:2,backgroundColor:"#ffffff"});
+    const img=canvas.toDataURL("image/png");
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:"landscape",unit:"pt",format:"a4"});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+    const margin=24;
+    const iw=pw-margin*2;
+    const ih=canvas.height*(iw/canvas.width);
+    pdf.addImage(img,"PNG",margin,margin, iw, Math.min(ih,ph-margin*2));
+    pdf.save(`Moen-Flo-Roadmap_${iso(new Date())}.pdf`);
+  }catch(err){ alert("Export failed: "+err.message); }
+  btn.textContent=old;
+};
+
+/* ---------------- Boot ---------------- */
+initRangeSelectors();
+render();
+</script>
+</body>
+</html>
