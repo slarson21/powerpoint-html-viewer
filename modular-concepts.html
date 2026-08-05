@@ -42,8 +42,18 @@
 </head>
 <body>
 <div class="card">
-  <div class="chart-title">Price vs. detected substances — detail view ($0–$350)</div>
-  <div class="chart-sub">Products priced $0–$350 &middot; 0–8 detected substances &middot; horizontal bars show price ranges &middot; hover any point for details &middot; y-axis jittered to separate overlapping products &middot; solid-outline circles = Moen concepts &middot; solid-outline diamonds = Moen sensor modules &middot; split colors = multi-substance detection</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:4px;">
+    <div class="chart-title" style="margin-bottom:0;">Price vs. Detected Substances</div>
+    <div style="display:flex;align-items:center;gap:10px;background:#ffffff;border:1px solid #D0DDE3;border-radius:8px;padding:8px 14px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+      <label for="gmSlider" style="font-size:12px;font-weight:600;color:#0D2B3E;font-family:system-ui,sans-serif;white-space:nowrap;">Gross Margin:</label>
+      <span style="font-size:11px;color:#898781;font-family:system-ui,sans-serif;">60%</span>
+      <input type="range" id="gmSlider" min="60" max="90" value="75" step="1"
+        style="width:120px;accent-color:#0A7E8C;cursor:pointer;">
+      <span style="font-size:11px;color:#898781;font-family:system-ui,sans-serif;">90%</span>
+      <span id="gmLabel" style="font-size:13px;font-weight:700;color:#0A7E8C;font-family:system-ui,sans-serif;min-width:36px;text-align:right;">75%</span>
+    </div>
+  </div>
+  <div class="chart-sub">horizontal bars show price ranges &middot; hover any point for details &middot; y-axis jittered to separate overlapping products</div>
   <div id="legend"></div>
   <div class="chart-wrap">
     <canvas id="chart" role="img" aria-label="Scatter chart of home detector products priced $0-$350 with up to 8 detected substances."></canvas>
@@ -71,73 +81,124 @@ const CATS = [
 
 // All products — filtered to $0-350, 0-8 true substances before plotting
 const ALL_PRODUCTS = [
-  { name:"IKEA VINDSTYRKA",                    lo:15,    hi:15,    cnt:4,    cat:0 },
-  { name:"First Alert RD1 test kit",           lo:15,    hi:25,    cnt:1.6,  cat:2 },
-  { name:"First Alert CO600 Plug-In",          lo:25,    hi:30,    cnt:1.8,  cat:1 },
-  { name:"First Alert CO710 (10-yr)",          lo:35,    hi:35,    cnt:1.15, cat:1 },
-  { name:"X-Sense XC03-W",                     lo:35,    hi:45,    cnt:0.85, cat:1 },
-  { name:"GoveeLife Smart AQ Monitor",         lo:40,    hi:40,    cnt:4,    cat:0 },
-  { name:"Defender CA6150",                    lo:40,    hi:50,    cnt:1.15, cat:6 },
-  { name:"Kidde Smart Smoke + CO",             lo:50,    hi:60,    cnt:2,    cat:1 },
-  { name:"Forensics Detectors FD-D001",        lo:50,    hi:70,    cnt:0.85, cat:6 },
-  { name:"INKBIRD IAQ series",                 lo:60,    hi:100,   cnt:7,    cat:3 },
-  { name:"Amazon Smart AQ Monitor",            lo:70,    hi:70,    cnt:5,    cat:0 },
-  { name:"Temtop LKC-1000S 2nd",              lo:99,    hi:129,   cnt:6,    cat:3 },
-  { name:"Levoit Core 400S",                   lo:100,   hi:130,   cnt:8,    cat:4 },
-  { name:"Coway Airmega AP-1512HH",            lo:108,   hi:200,   cnt:7.3,  cat:4 },
-  { name:"CO Experts PRO-10",                  lo:120,   hi:150,   cnt:1,    cat:6 },
-  { name:"Temtop LKC-1000S+",                 lo:129,   hi:149,   cnt:6.9,  cat:3 },
-  { name:"Awair Element",                      lo:149,   hi:149,   cnt:5,    cat:0 },
-  { name:"Temtop M2000 2nd Gen",              lo:149,   hi:179,   cnt:6,    cat:3 },
-  { name:"Qingping Air Monitor Gen 2",         lo:150,   hi:150,   cnt:7.1,  cat:0 },
-  { name:"Blueair Blue Pure 311i Max",         lo:150,   hi:200,   cnt:6.7,  cat:4 },
-  { name:"Winix 5510",                         lo:150,   hi:200,   cnt:8.15, cat:4 },
-  { name:"Airthings Corentium Home 2",         lo:159,   hi:179,   cnt:3,    cat:2 },
-  { name:"Ecosense RadonEye RD200",            lo:179,   hi:199,   cnt:1.15, cat:2 },
-  { name:"Safety Siren Pro4",                  lo:179,   hi:179,   cnt:0.85, cat:2 },
-  { name:"Levoit Core 600S",                   lo:200,   hi:230,   cnt:7.85, cat:5 },
-  { name:"PurpleAir Indoor",                   lo:229,   hi:229,   cnt:7,    cat:0 },
-  { name:"IQAir AirVisual Pro",                lo:249,   hi:269,   cnt:5,    cat:0 },
-  { name:"TPI 780",                            lo:250,   hi:250,   cnt:1,    cat:6 },
-  { name:"Airthings View Plus",                lo:329,   hi:329,   cnt:7,    cat:0 },
-  { name:"GoveeLife Upgraded Smart WLD",       lo:18,    hi:18,    cnt:1.2,  cat:7 },
-  { name:"YoLink Water Leak Sensor",           lo:15,    hi:17,    cnt:1.4,  cat:7 },
-  { name:"X-Sense SWS54",                      lo:17,    hi:19,    cnt:0.8,  cat:7 },
-  { name:"SwitchBot WiFi Water Leak Detector", lo:18,    hi:22,    cnt:0.6,  cat:7 },
-  { name:"Moen Flo Detector (MAP $56.36)",     lo:56.36, hi:56.36, cnt:1.5,  cat:8, flo:true },
+  { name:"IKEA VINDSTYRKA",                    lo:15,    hi:15,    cnt:4,    cat:0 , detects:"Detects: PM2.5, tVOC, temperature, humidity" },
+  { name:"First Alert RD1 test kit",           lo:15,    hi:25,    cnt:1.6,  cat:2 , detects:"Detects: Radon gas — short-term passive test kit (not continuous monitoring)" },
+  { name:"First Alert CO600 Plug-In",          lo:25,    hi:30,    cnt:1.8,  cat:1 , detects:"Detects: Carbon monoxide (standard alarm threshold ≥70 ppm)" },
+  { name:"First Alert CO710 (10-yr)",          lo:35,    hi:35,    cnt:1.15, cat:1 , detects:"Detects: Carbon monoxide (standard alarm threshold ≥70 ppm)" },
+  { name:"X-Sense XC03-W",                     lo:35,    hi:45,    cnt:0.85, cat:1 , detects:"Detects: Carbon monoxide (standard alarm threshold ≥70 ppm)" },
+  { name:"GoveeLife Smart AQ Monitor",         lo:40,    hi:40,    cnt:4,    cat:0 , detects:"Detects: PM2.5, tVOC, CO₂, temperature" },
+  { name:"Defender CA6150",                    lo:40,    hi:50,    cnt:1.15, cat:6 , detects:"Detects: Carbon monoxide at low levels (chronic exposure monitoring)" },
+  { name:"Kidde Smart Smoke + CO",             lo:50,    hi:60,    cnt:2,    cat:1 , detects:"Detects: Smoke + Carbon monoxide" },
+  { name:"Forensics Detectors FD-D001",        lo:50,    hi:70,    cnt:0.85, cat:6 , detects:"Detects: Carbon monoxide at sub-standard thresholds — chronic low-level exposure" },
+  { name:"INKBIRD IAQ series",                 lo:60,    hi:100,   cnt:7,    cat:3 , detects:"Detects: Formaldehyde (HCHO), PM2.5, CO₂, tVOC, temperature, humidity" },
+  { name:"Amazon Smart AQ Monitor",            lo:70,    hi:70,    cnt:5,    cat:0 , detects:"Detects: PM2.5, tVOC, CO₂, temperature, humidity" },
+  { name:"Temtop LKC-1000S 2nd",              lo:99,    hi:129,   cnt:6,    cat:3 , detects:"Detects: Formaldehyde (HCHO), PM2.5, PM10, AQI, temperature, humidity" },
+  { name:"Levoit Core 400S",                   lo:100,   hi:130,   cnt:8,    cat:4 , detects:"Filters: PM2.5, PM10, dust, pollen, pet dander, smoke, odors (HEPA + activated carbon). Also monitors PM2.5, AQI, temperature, humidity" },
+  { name:"Coway Airmega AP-1512HH",            lo:108,   hi:200,   cnt:7.3,  cat:4 , detects:"Filters: PM2.5, dust, pollen, VOCs, odors (HEPA + activated carbon). Also monitors PM2.5, AQI, odor levels, filter status" },
+  { name:"CO Experts PRO-10",                  lo:120,   hi:150,   cnt:1,    cat:6 , detects:"Detects: Carbon monoxide at sub-standard thresholds — chronic low-level exposure" },
+  { name:"Temtop LKC-1000S+",                 lo:129,   hi:149,   cnt:6.9,  cat:3 , detects:"Detects: Formaldehyde (HCHO), PM2.5, PM10, CO₂, AQI, temperature, humidity" },
+  { name:"Awair Element",                      lo:149,   hi:149,   cnt:5,    cat:0 , detects:"Detects: CO₂, tVOC, PM2.5, temperature, humidity" },
+  { name:"Temtop M2000 2nd Gen",              lo:149,   hi:179,   cnt:6,    cat:3 , detects:"Detects: Formaldehyde (HCHO), CO₂, PM2.5, PM10, tVOC, temperature, humidity" },
+  { name:"Qingping Air Monitor Gen 2",         lo:150,   hi:150,   cnt:7.1,  cat:0 , detects:"Detects: CO₂, PM2.5, tVOC, NO₂, temperature, humidity" },
+  { name:"Blueair Blue Pure 311i Max",         lo:150,   hi:200,   cnt:6.7,  cat:4 , detects:"Filters: PM2.5, PM10, dust, pollen, odors (HEPASilent + carbon). Also monitors PM2.5, tVOC, CO₂, temperature, humidity" },
+  { name:"Winix 5510",                         lo:150,   hi:200,   cnt:8.15, cat:4 , detects:"Filters: PM2.5, PM10, dust, pollen, pet dander, odors (True HEPA + PlasmaWave + carbon). Also monitors PM2.5, AQI" },
+  { name:"Airthings Corentium Home 2",         lo:159,   hi:179,   cnt:3,    cat:2 , detects:"Detects: Radon gas (continuous monitoring)" },
+  { name:"Ecosense RadonEye RD200",            lo:179,   hi:199,   cnt:1.15, cat:2 , detects:"Detects: Radon gas (continuous monitoring)" },
+  { name:"Safety Siren Pro4",                  lo:179,   hi:179,   cnt:0.85, cat:2 , detects:"Detects: Radon gas (continuous monitoring)" },
+  { name:"Levoit Core 600S",                   lo:200,   hi:230,   cnt:7.85, cat:5 , detects:"Filters + Detects: PM2.5, tVOC, PM10, odors, pollen (HEPA + carbon). Monitors PM2.5, AQI, tVOC, temperature, humidity" },
+  { name:"PurpleAir Indoor",                   lo:229,   hi:229,   cnt:7,    cat:0 , detects:"Detects: PM1.0, PM2.5, PM10, particle count, temperature, humidity" },
+  { name:"IQAir AirVisual Pro",                lo:249,   hi:269,   cnt:5,    cat:0 , detects:"Detects: PM2.5, CO₂, tVOC, temperature, humidity" },
+  { name:"TPI 780",                            lo:250,   hi:250,   cnt:1,    cat:6 , detects:"Detects: Carbon monoxide at sub-standard thresholds — chronic low-level exposure" },
+  { name:"Airthings View Plus",                lo:329,   hi:329,   cnt:7,    cat:0 , detects:"Detects: Radon, PM2.5, CO₂, tVOC, NO₂, temperature, humidity" },
+  { name:"GoveeLife Upgraded Smart WLD",       lo:18,    hi:18,    cnt:1.2,  cat:7 , detects:"Detects: Water leak" },
+  { name:"YoLink Water Leak Sensor",           lo:15,    hi:17,    cnt:1.4,  cat:7 , detects:"Detects: Water leak" },
+  { name:"X-Sense SWS54",                      lo:17,    hi:19,    cnt:0.8,  cat:7 , detects:"Detects: Water leak" },
+  { name:"SwitchBot WiFi Water Leak Detector", lo:18,    hi:22,    cnt:0.6,  cat:7 , detects:"Detects: Water leak" },
+  { name:"Moen Flo Detector (MAP $56.36)",     lo:56.36, hi:56.36, cnt:3,    cat:8, flo:true, trueCnt:3, detects:"Detects: Water leak, temperature, humidity" },
 
   // ── Moen sensor module concepts (add-on accessories)
-  { name:"Moen Module: VOCs (broad)",                lo:46.08,  hi:69.85,  cnt:-0.20, cat:0, module:true, cats:[0],   trueCnt:1 },
-  { name:"Moen Module: PM2.5",                       lo:57.24,  hi:81.01,  cnt:-0.40, cat:0, module:true, cats:[0],   trueCnt:1 },
-  { name:"Moen Module: CO (acute)",                  lo:57.24,  hi:81.01,  cnt:-0.60, cat:1, module:true, cats:[1],   trueCnt:1 },
-  { name:"Moen Module: Formaldehyde",                lo:57.24,  hi:81.01,  cnt:-0.80, cat:3, module:true, cats:[3],   trueCnt:1 },
-  { name:"Moen Module: Chronic low-level CO",        lo:79.56,  hi:103.33, cnt:-0.20, cat:6, module:true, cats:[6],   trueCnt:1 },
-  { name:"Moen Module: Radon gas",                   lo:101.89, hi:125.65, cnt:-0.40, cat:2, module:true, cats:[2],   trueCnt:1 },
-  { name:"Moen Module: VOCs + PM2.5",               lo:68.40,  hi:92.17,  cnt:2.15,  cat:0, module:true, cats:[0,0], trueCnt:2 },
-  { name:"Moen Module: VOCs + PM2.5 + Radon",       lo:135.37, hi:159.13, cnt:3.50,  cat:0, module:true, cats:[0,2], trueCnt:3 },
-  { name:"Moen Module: VOCs + PM2.5 + CO (acute)",  lo:101.89, hi:125.65, cnt:3.50,  cat:0, module:true, cats:[0,1], trueCnt:3 },
-  { name:"Moen Module: PM2.5 + Formaldehyde",       lo:79.56,  hi:103.33, cnt:2.35,  cat:3, module:true, cats:[0,3], trueCnt:2 },
-  { name:"Moen Module: PM2.5 + Formaldehyde + VOCs",lo:101.89, hi:125.65, cnt:3.70,  cat:3, module:true, cats:[0,3], trueCnt:3 },
+  { name:"Moen Module: VOCs (broad)",                lo:36.0,  hi:36.0,  cnt:-0.20, cat:0, module:true, cats:[0],   trueCnt:1 , detects:"Adds to base model: Volatile organic compounds (tVOC) — mold off-gassing, chemical off-gassing from materials" },
+  { name:"Moen Module: PM2.5",                       lo:44.0,  hi:44.0,  cnt:-0.28, cat:0, module:true, cats:[0],   trueCnt:1 , detects:"Adds to base model: Particulate matter ≤2.5μm — smoke, dust, pollen, combustion particles" },
+  { name:"Moen Module: CO (acute)",                  lo:48.0,  hi:48.0,  cnt:-0.54, cat:1, module:true, cats:[1],   trueCnt:1 , detects:"Adds to base model: Carbon monoxide at standard alarm thresholds (≥70 ppm) — acute exposure risk" },
+  { name:"Moen Module: Formaldehyde",                lo:52.0,  hi:52.0,  cnt:-0.80, cat:3, module:true, cats:[3],   trueCnt:1 , detects:"Adds to base model: Formaldehyde (HCHO) — off-gassing from building materials, adhesives, furniture" },
+  { name:"Moen Module: Chronic low-level CO",        lo:68.0,  hi:68.0, cnt:-0.20, cat:6, module:true, cats:[6],   trueCnt:1 , detects:"Adds to base model: Carbon monoxide at sub-standard thresholds (10–30 ppm) — chronic low-level exposure risk" },
+  { name:"Moen Module: Radon gas",                   lo:92.0,  hi:92.0, cnt:-0.40, cat:2, module:true, cats:[2],   trueCnt:1 , detects:"Adds to base model: Radon gas (Rn-222) — radioactive soil gas accumulating in basements and below-grade spaces" },
+  { name:"Moen Module: VOCs + PM2.5",               lo:65.088,  hi:65.088,  cnt:2.15,  cat:0, module:true, cats:[0,0], trueCnt:2 , detects:"Adds to base model: Volatile organic compounds (tVOC) + particulate matter ≤2.5μm" },
+  { name:"Moen Module: VOCs + PM2.5 + Radon",       lo:132.72, hi:132.72, cnt:3.50,  cat:0, module:true, cats:[0,2], trueCnt:3 , detects:"Adds to base model: Volatile organic compounds (tVOC) + particulate matter ≤2.5μm + radon gas (Rn-222)" },
+  { name:"Moen Module: VOCs + PM2.5 + CO (acute)",  lo:98.904,  hi:98.904, cnt:4.25,  cat:0, module:true, cats:[0,1], trueCnt:3 , detects:"Adds to base model: Volatile organic compounds (tVOC) + particulate matter ≤2.5μm + carbon monoxide (≥70 ppm acute)" },
+  { name:"Moen Module: PM2.5 + Formaldehyde",       lo:76.36,  hi:76.36, cnt:2.35,  cat:3, module:true, cats:[0,3], trueCnt:2 , detects:"Adds to base model: Particulate matter ≤2.5μm + formaldehyde (HCHO)" },
+  { name:"Moen Module: PM2.5 + Formaldehyde + VOCs",lo:98.904,  hi:98.904, cnt:4.55,  cat:3, module:true, cats:[0,3], trueCnt:3 , detects:"Adds to base model: Particulate matter ≤2.5μm + formaldehyde (HCHO) + volatile organic compounds (tVOC)" },
   // Moen concepts
-  { name:"Moen Concept: VOCs (broad)",                lo:78.72,  hi:78.72,  cnt:0.85, cat:0, concept:true, cats:[0],   trueCnt:1 },
-  { name:"Moen Concept: PM2.5",                       lo:89.91,  hi:89.91,  cnt:0.75, cat:0, concept:true, cats:[0],   trueCnt:1 },
-  { name:"Moen Concept: CO (acute)",                  lo:89.91,  hi:89.91,  cnt:0.60, cat:1, concept:true, cats:[1],   trueCnt:1 },
-  { name:"Moen Concept: Formaldehyde",                lo:89.91,  hi:89.91,  cnt:0.45, cat:3, concept:true, cats:[3],   trueCnt:1 },
-  { name:"Moen Concept: Chronic low-level CO",        lo:112.27, hi:112.27, cnt:0.85, cat:6, concept:true, cats:[6],   trueCnt:1 },
-  { name:"Moen Concept: Radon gas",                   lo:134.64, hi:134.64, cnt:0.85, cat:2, concept:true, cats:[2],   trueCnt:1 },
-  { name:"Moen Concept: VOCs + PM2.5",               lo:101.09, hi:101.09, cnt:2.0,  cat:0, concept:true, cats:[0,0], trueCnt:2 },
-  { name:"Moen Concept: VOCs + PM2.5 + Radon",       lo:168.19, hi:168.19, cnt:3.2,  cat:0, concept:true, cats:[0,2], trueCnt:3 },
-  { name:"Moen Concept: VOCs + PM2.5 + CO (acute)",  lo:134.64, hi:134.64, cnt:3.2,  cat:0, concept:true, cats:[0,1], trueCnt:3 },
-  { name:"Moen Concept: PM2.5 + Formaldehyde",       lo:112.27, hi:112.27, cnt:2.5,  cat:3, concept:true, cats:[0,3], trueCnt:2 },
-  { name:"Moen Concept: PM2.5 + Formaldehyde + VOCs",lo:134.64, hi:134.64, cnt:2.8,  cat:3, concept:true, cats:[0,3], trueCnt:3 },
+  { name:"Moen Concept: VOCs (broad)",                lo:61.8,  hi:61.8,  cnt:3.85, cat:0, concept:true, voc:true, cats:[0],   trueCnt:4 , detects:"Detects: Water leak, temperature, humidity, volatile organic compounds (tVOC)" },
+  { name:"Moen Concept: PM2.5",                       lo:69.8,  hi:69.8,  cnt:3.90, cat:0, concept:true, cats:[0],   trueCnt:4 , detects:"Detects: Water leak, temperature, humidity, particulate matter ≤2.5μm" },
+  { name:"Moen Concept: CO (acute)",                  lo:73.8,  hi:73.8,  cnt:3.60, cat:1, concept:true, cats:[1],   trueCnt:4 , detects:"Detects: Water leak, temperature, humidity, carbon monoxide (≥70 ppm acute threshold)" },
+  { name:"Moen Concept: Formaldehyde",                lo:77.8,  hi:77.8,  cnt:3.30, cat:3, concept:true, cats:[3],   trueCnt:4 , detects:"Detects: Water leak, temperature, humidity, formaldehyde (HCHO)" },
+  { name:"Moen Concept: Chronic low-level CO",        lo:93.8, hi:93.8, cnt:3.85, cat:6, concept:true, cats:[6],   trueCnt:4 , detects:"Detects: Water leak, temperature, humidity, carbon monoxide (10–30 ppm chronic threshold)" },
+  { name:"Moen Concept: Radon gas",                   lo:117.8, hi:117.8, cnt:3.85, cat:2, concept:true, cats:[2],   trueCnt:4 , detects:"Detects: Water leak, temperature, humidity, radon gas (Rn-222)" },
+  { name:"Moen Concept: VOCs + PM2.5",               lo:90.888, hi:90.888, cnt:5.0,  cat:0, concept:true, cats:[0,0], trueCnt:5 , detects:"Detects: Water leak, temperature, humidity, volatile organic compounds (tVOC), particulate matter ≤2.5μm" },
+  { name:"Moen Concept: VOCs + PM2.5 + Radon",       lo:158.52, hi:158.52, cnt:6.4,  cat:0, concept:true, cats:[0,2], trueCnt:6 , detects:"Detects: Water leak, temperature, humidity, volatile organic compounds (tVOC), particulate matter ≤2.5μm, radon gas (Rn-222)" },
+  { name:"Moen Concept: VOCs + PM2.5 + CO (acute)",  lo:124.704, hi:124.704, cnt:6.2,  cat:0, concept:true, cats:[0,1], trueCnt:6 , detects:"Detects: Water leak, temperature, humidity, volatile organic compounds (tVOC), particulate matter ≤2.5μm, carbon monoxide (≥70 ppm acute)" },
+  { name:"Moen Concept: PM2.5 + Formaldehyde",       lo:102.16, hi:102.16, cnt:5.5,  cat:3, concept:true, cats:[0,3], trueCnt:5 , detects:"Detects: Water leak, temperature, humidity, particulate matter ≤2.5μm, formaldehyde (HCHO)" },
+  { name:"Moen Concept: PM2.5 + Formaldehyde + VOCs",lo:124.704, hi:124.704, cnt:5.8,  cat:3, concept:true, cats:[0,3], trueCnt:6 , detects:"Detects: Water leak, temperature, humidity, particulate matter ≤2.5μm, formaldehyde (HCHO), volatile organic compounds (tVOC)" },
 ];
+
+
+// ── Gross margin slider — COGS lookup for Moen concepts and modules
+const MOEN_COGS = {
+  "Moen Module: VOCs (broad)":                  9.00,
+  "Moen Module: PM2.5":                        11.00,
+  "Moen Module: CO (acute)":                   12.00,
+  "Moen Module: Formaldehyde":                 13.00,
+  "Moen Module: Chronic low-level CO":         17.00,
+  "Moen Module: Radon gas":                    23.00,
+  "Moen Module: VOCs + PM2.5":                 16.27,
+  "Moen Module: VOCs + PM2.5 + Radon":         33.18,
+  "Moen Module: VOCs + PM2.5 + CO (acute)":    24.73,
+  "Moen Module: PM2.5 + Formaldehyde":         19.09,
+  "Moen Module: PM2.5 + Formaldehyde + VOCs":  24.73,
+  "Moen Concept: VOCs (broad)":                15.45,
+  "Moen Concept: PM2.5":                       17.45,
+  "Moen Concept: CO (acute)":                  18.45,
+  "Moen Concept: Formaldehyde":                19.45,
+  "Moen Concept: Chronic low-level CO":        23.45,
+  "Moen Concept: Radon gas":                   29.45,
+  "Moen Concept: VOCs + PM2.5":                22.722,
+  "Moen Concept: VOCs + PM2.5 + Radon":        39.63,
+  "Moen Concept: VOCs + PM2.5 + CO (acute)":   31.176,
+  "Moen Concept: PM2.5 + Formaldehyde":        25.54,
+  "Moen Concept: PM2.5 + Formaldehyde + VOCs": 31.176,
+};
+
+let currentGM = 0.75; // default 75%
+
+function mapFromCogs(cogs, gm) {
+  return cogs / (1 - gm);
+}
 
 // Filter to detail range: $0-350, true substance count 0-8
 function inRange(p) {
   const tc = p.trueCnt !== undefined ? p.trueCnt : Math.round(p.cnt);
   return p.lo <= 350 && tc <= 8;
-  // modules with negative cnt are always included if in price range
 }
+
+function applyGM(gm) {
+  currentGM = gm;
+  ALL_PRODUCTS.forEach(p => {
+    const cogs = MOEN_COGS[p.name];
+    if (cogs !== undefined) {
+      const newMap = mapFromCogs(cogs, gm);
+      p.lo = newMap;
+      p.hi = newMap;
+    }
+  });
+  // Rebuild Chart.js datasets using current filtered products
+  const visible = ALL_PRODUCTS.filter(inRange);
+  chartRef.data.datasets.forEach((ds, ci) => {
+    ds.data = visible.filter(p => p.cat === ci).map(p => ({ x: (p.lo + p.hi) / 2, y: p.cnt }));
+  });
+  chartRef.update('none');
+}
+
 const products = ALL_PRODUCTS.filter(inRange);
 
 const gridColor   = isDark ? "#2c2c2a" : "#e1e0d9";
@@ -183,10 +244,19 @@ function drawProduct(ctx, p, pxFn, pyFn, hot, sf) {
 
   } else if (p.concept) {
     // Detector concept: circle, solid outline, vertical color split for multi-cat
-    const r = (hot ? 9 : 7) * sf;
+    const isVoc = !!p.voc;
+    const r = (isVoc ? (hot ? 13 : 11) : (hot ? 9 : 7)) * sf;
     const colors = [...new Set((p.cats||[p.cat]).map(c => CATS[c].color))];
-    const lw = (hot?3.5:2.5)*sf;
+    const lw = (isVoc ? 3.5 : hot ? 3.5 : 2.5) * sf;
     const bg = isDark ? "#2a2a28" : "#ffffff";
+
+    // VOC focal glow rings — drawn behind the circle
+    if (isVoc) {
+      ctx.beginPath(); ctx.arc(xLo, yPx, r + 9*sf, 0, Math.PI*2);
+      ctx.fillStyle = colors[0] + "18"; ctx.fill();
+      ctx.beginPath(); ctx.arc(xLo, yPx, r + 5*sf, 0, Math.PI*2);
+      ctx.fillStyle = colors[0] + "35"; ctx.fill();
+    }
 
     if (colors.length === 1) {
       // Single color — full solid ring
@@ -195,25 +265,32 @@ function drawProduct(ctx, p, pxFn, pyFn, hot, sf) {
       ctx.strokeStyle = colors[0]; ctx.lineWidth = lw; ctx.stroke();
     } else {
       // Multi-color — clip left half / right half vertically
-      // Left half = colors[0], right half = colors[1]
       ctx.save();
-      // Fill background
       ctx.beginPath(); ctx.arc(xLo, yPx, r, 0, Math.PI*2);
       ctx.fillStyle = bg; ctx.fill();
-      // Left arc (π/2 → 3π/2, i.e. left semicircle)
       ctx.beginPath();
       ctx.arc(xLo, yPx, r, Math.PI/2, 3*Math.PI/2);
       ctx.strokeStyle = colors[0]; ctx.lineWidth = lw; ctx.stroke();
-      // Right arc (3π/2 → π/2, i.e. right semicircle)
       ctx.beginPath();
       ctx.arc(xLo, yPx, r, 3*Math.PI/2, Math.PI/2);
       ctx.strokeStyle = colors[1]; ctx.lineWidth = lw; ctx.stroke();
-      // Vertical dividing line
       ctx.beginPath();
       ctx.moveTo(xLo, yPx - r); ctx.lineTo(xLo, yPx + r);
       ctx.strokeStyle = colors[0]; ctx.lineWidth = 1*sf; ctx.stroke();
       ctx.restore();
     }
+
+    // VOC label — floats just above the point
+    if (isVoc && !hot) {
+      ctx.save();
+      ctx.font = `600 9px system-ui,sans-serif`;
+      ctx.fillStyle = colors[0];
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillText("(proposed base model)", xLo, yPx - r - 4*sf);
+      ctx.restore();
+    }
+
     // Centre dot
     ctx.beginPath(); ctx.arc(xLo, yPx, 2.5*sf, 0, Math.PI*2);
     ctx.fillStyle = colors[0]+"BB"; ctx.fill();
@@ -331,33 +408,105 @@ function drawProduct(ctx, p, pxFn, pyFn, hot, sf) {
 // ── Tooltip
 function drawTooltip(ctx, p, xMidPx, yPx, canvasW) {
   const col = CATS[p.cat].color;
-  const priceStr = p.lo===p.hi ? `$${p.lo.toFixed(2)}` : `$${p.lo} \u2013 $${p.hi}`;
+  const priceStr = p.lo===p.hi ? `$${p.lo.toFixed(2)}` : `$${p.lo.toFixed(2)} \u2013 $${p.hi.toFixed(2)}`;
   const tc = p.trueCnt !== undefined ? p.trueCnt : Math.round(p.cnt);
   const displayName = p.concept ? p.name.replace("Moen Concept: ","") : p.module ? p.name.replace("Moen Module: ","") : p.name;
-  const lines = [
-    {text:displayName,                            font:"600 13px system-ui,sans-serif", color:fgColor},
-    {text:priceStr,                               font:"500 12px system-ui,sans-serif", color:col},
-    {text:`${tc} substance${tc===1?"":"s"} detected`, font:"400 11px system-ui,sans-serif", color:mutedColor},
-    {text:CATS[p.cat].label,                      font:"400 11px system-ui,sans-serif", color:mutedColor},
-  ];
-  if (p.flo)     lines.splice(2,0,{text:"MAP price",                   font:"500 10px system-ui,sans-serif",color:col});
-  if (p.concept) lines.splice(2,0,{text:"Moen concept · suggested MAP",font:"500 10px system-ui,sans-serif",color:"#888"});
-  if (p.module)  lines.splice(2,0,{text:"Moen sensor module · suggested MAP",font:"500 10px system-ui,sans-serif",color:"#888"});
 
-  const pad=12, lineH=18;
+  // Max tooltip width — wide enough for detects text but capped
+  const MAX_TT_W = 360;
+  const pad=12, lineH=17;
+
+  // Word-wrap a string to fit within maxPx width given current ctx font
+  function wrapText(text, maxPx) {
+    const words = text.split(' ');
+    const wrapped = [];
+    let line = '';
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width > maxPx && line) {
+        wrapped.push(line);
+        line = word;
+      } else {
+        line = test;
+      }
+    }
+    if (line) wrapped.push(line);
+    return wrapped;
+  }
+
+  // Build line objects — each is {text, font, color, wrapped:[]}
+  const rawLines = [
+    {text:displayName,                                font:"600 13px system-ui,sans-serif", color:fgColor},
+    {text:priceStr,                                   font:"500 12px system-ui,sans-serif", color:col},
+    {text:`${tc} substance${tc===1?"":"s"} detected`, font:"400 11px system-ui,sans-serif", color:mutedColor, purifierCat: p.cat},
+    {text:CATS[p.cat].label,                          font:"400 11px system-ui,sans-serif", color:mutedColor},
+  ];
+  if (p.flo)     rawLines.splice(2,0,{text:"MAP price",                     font:"500 10px system-ui,sans-serif",color:col});
+  if (p.concept) rawLines.splice(2,0,{text:"Moen concept \xB7 suggested MAP",font:"500 10px system-ui,sans-serif",color:"#888"});
+  if (p.module)  rawLines.splice(2,0,{text:"Moen sensor module \xB7 MAP",    font:"500 10px system-ui,sans-serif",color:"#888"});
+
+  // Add detects line for any product that has it
+  if (p.detects) {
+    const detectFont = (p.concept || p.module) ? "400 10px system-ui,sans-serif" : "400 10px system-ui,sans-serif";
+    ctx.font = detectFont;
+    const detectWrapped = wrapText(p.detects, MAX_TT_W - pad*2 - 10);
+    detectWrapped.forEach(line => rawLines.push({text:line, font:detectFont, color:col}));
+  }
+
+  // Measure actual tooltip width from all lines
   ctx.save();
-  const maxW=Math.max(...lines.map(l=>{ctx.font=l.font;return ctx.measureText(l.text).width;}));
-  const bw=maxW+pad*2+6, bh=lines.length*lineH+pad*2;
-  let bx=xMidPx-bw/2, by=yPx-bh-20;
-  if(bx<6)bx=6; if(bx+bw>canvasW-6)bx=canvasW-bw-6; if(by<6)by=yPx+20;
+  let maxW = 0;
+  rawLines.forEach(l => {
+    ctx.font = l.font;
+    const w = ctx.measureText(l.text).width;
+    if (w > maxW) maxW = w;
+  });
+  // Cap at MAX_TT_W
+  const bw = Math.min(maxW + pad*2 + 6, MAX_TT_W + pad*2 + 6);
+  const bh = rawLines.length * lineH + pad*2;
+
+  let bx = xMidPx - bw/2, by = yPx - bh - 20;
+  if (bx < 6) bx = 6;
+  if (bx + bw > canvasW - 6) bx = canvasW - bw - 6;
+  if (by < 6) by = yPx + 20;
 
   ctx.shadowColor="rgba(0,0,0,0.16)"; ctx.shadowBlur=10; ctx.shadowOffsetY=3;
-  ctx.fillStyle=bgColor; ctx.strokeStyle=p.flo?CATS[8].color:borderColor;
+  ctx.fillStyle=bgColor;
+  ctx.strokeStyle=p.flo?CATS[8].color:borderColor;
   ctx.lineWidth=p.flo?1.5:1;
   ctx.beginPath(); ctx.roundRect(bx,by,bw,bh,8); ctx.fill(); ctx.stroke();
   ctx.shadowColor="transparent"; ctx.shadowBlur=0;
-  ctx.fillStyle=col; ctx.beginPath(); ctx.roundRect(bx,by,3,bh,[8,0,0,8]); ctx.fill();
-  lines.forEach((l,i)=>{ctx.font=l.font;ctx.fillStyle=l.color;ctx.fillText(l.text,bx+pad+4,by+pad+13+i*lineH);});
+
+  ctx.fillStyle=col;
+  ctx.beginPath(); ctx.roundRect(bx,by,3,bh,[8,0,0,8]); ctx.fill();
+
+  rawLines.forEach((l,i) => {
+    ctx.font = l.font;
+    ctx.fillStyle = l.color;
+    const textY = by+pad+13+i*lineH;
+    const textX = bx+pad+4;
+
+    // Purifier-only (cat:4): render "X substances filtered" with "filtered" underlined
+    if (l.purifierCat === 4) {
+      const wordDetected = `${tc} substance${tc===1?"":"s"} `;
+      const wordFiltered = "filtered";
+      ctx.fillText(wordDetected + wordFiltered, textX, textY);
+      // Underline "filtered" only
+      const prefixW = ctx.measureText(wordDetected).width;
+      const filteredW = ctx.measureText(wordFiltered).width;
+      ctx.beginPath();
+      ctx.strokeStyle = l.color;
+      ctx.lineWidth = 0.8;
+      ctx.moveTo(textX + prefixW, textY + 2);
+      ctx.lineTo(textX + prefixW + filteredW, textY + 2);
+      ctx.stroke();
+    } else if (l.purifierCat === 5) {
+      // detect+purify: show "X substances actioned"
+      ctx.fillText(`${tc} substance${tc===1?"":"s"} actioned`, textX, textY);
+    } else {
+      ctx.fillText(l.text, textX, textY);
+    }
+  });
   ctx.restore();
 }
 
@@ -414,7 +563,7 @@ const barPlugin = {
   afterDatasetsDraw(chart) {
     const {ctx,scales:{x,y}}=chart;
     ctx.save();
-    products.forEach(p=>{
+    ALL_PRODUCTS.filter(inRange).forEach(p=>{
       const hot=hoveredProduct&&hoveredProduct.name===p.name;
       drawProduct(ctx,p,v=>x.getPixelForValue(v),v=>y.getPixelForValue(v),hot,1);
     });
@@ -436,7 +585,7 @@ chartRef=new Chart(canvas,{
   data:{
     datasets:CATS.map((cat,ci)=>({
       label:cat.label,
-      data:products.filter(p=>p.cat===ci).map(p=>({x:(p.lo+p.hi)/2,y:p.cnt})),
+      data:ALL_PRODUCTS.filter(inRange).filter(p=>p.cat===ci).map(p=>({x:(p.lo+p.hi)/2,y:p.cnt})),
       backgroundColor:"transparent",borderColor:"transparent",
       pointRadius:0,pointHoverRadius:0,
     }))
@@ -446,11 +595,11 @@ chartRef=new Chart(canvas,{
     layout:{padding:{top:16,right:24,bottom:8,left:8}},
     scales:{
       x:{type:"linear",min:0,max:360,
-        title:{display:true,text:"Price per unit (USD)",color:mutedColor,font:{size:13},padding:{top:8}},
+        title:{display:true,text:"Price Per Unit (USD)",color:mutedColor,font:{size:13},padding:{top:8}},
         ticks:{color:tickColor,font:{size:11},callback:v=>`$${v}`,stepSize:50},
         grid:{color:gridColor},border:{color:borderColor}},
       y:{min:-1.2,max:9,
-        title:{display:true,text:"Number of detected substances",color:mutedColor,font:{size:13},padding:{bottom:8}},
+        title:{display:true,text:"Number of Foreign Substances Actioned",color:mutedColor,font:{size:13},padding:{bottom:8}},
         ticks:{color:tickColor,font:{size:11},stepSize:1,callback:v=>(!Number.isInteger(v)||v===0)?"":`${v}`},
         grid:{color:ctx=>ctx.tick.value===0?"transparent":gridColor},border:{color:borderColor}}
     },
@@ -468,7 +617,7 @@ canvas.addEventListener("mousemove",e=>{
   const margin=x.getValueForPixel(mx+14)-x.getValueForPixel(mx);
 
   let closest=null,minScore=Infinity;
-  products.forEach(p=>{
+  ALL_PRODUCTS.filter(inRange).forEach(p=>{
     const dy=Math.abs(dataY-p.cnt);
     const tol=p.flo?0.6:p.concept?0.5:p.module?0.5:0.4;
     if(dy>tol)return;
@@ -484,15 +633,30 @@ canvas.addEventListener("mouseleave",()=>{
 });
 
 // ── Legend
+// ── Gross margin slider
+document.getElementById("gmSlider").addEventListener("input", function() {
+  const gm = parseInt(this.value) / 100;
+  document.getElementById("gmLabel").textContent = this.value + "%";
+  applyGM(gm);
+});
+
 document.getElementById("legend").innerHTML=CATS.map((cat,i)=>{
   const isFlo=i===8, isConcept=i===9, isModule=i===10;
   let icon;
   if(isFlo){
     icon=`<span style="color:#FFD700;font-size:16px;line-height:12px;">★</span>`;
   } else if(isConcept){
-    icon=`<span style="width:12px;height:12px;border-radius:50%;border:2.5px solid #888;background:${isDark?"#2a2a28":"#fff"};flex-shrink:0;display:inline-block;"></span>`;
+    // Circle outline with centre dot — mirrors the plotted concept point
+    icon=`<span style="position:relative;width:14px;height:14px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;">
+      <span style="width:14px;height:14px;border-radius:50%;border:2.5px solid #888;background:${isDark?"#2a2a28":"#fff"};position:absolute;"></span>
+      <span style="width:4px;height:4px;border-radius:50%;background:#888;opacity:0.75;position:relative;z-index:1;"></span>
+    </span>`;
   } else if(isModule){
-    icon=`<span style="width:12px;height:12px;transform:rotate(45deg);border:2.5px solid #888;background:${isDark?"#2a2a28":"#fff"};flex-shrink:0;display:inline-block;"></span>`;
+    // Rotated square outline with centre dot — mirrors the plotted module diamond point
+    icon=`<span style="position:relative;width:14px;height:14px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;">
+      <span style="width:10px;height:10px;transform:rotate(45deg);border:2.5px solid #888;background:${isDark?"#2a2a28":"#fff"};position:absolute;"></span>
+      <span style="width:4px;height:4px;border-radius:50%;background:#888;opacity:0.75;position:relative;z-index:1;"></span>
+    </span>`;
   } else {
     icon=`<span class="legend-swatch" style="background:${cat.color};border-radius:3px;width:12px;height:12px;flex-shrink:0;display:inline-block;"></span>`;
   }
